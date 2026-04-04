@@ -15,12 +15,25 @@ import yaml
 from pydantic import BaseModel, ValidationError, field_validator
 
 from boomarr.const import (
+    APP_NAME,
     CONF_LOGGING,
+    CONF_LOGGING_COLOR,
+    CONF_LOGGING_DATE_FORMAT,
+    CONF_LOGGING_DIR,
+    CONF_LOGGING_FILE_NAME,
+    CONF_LOGGING_FORMAT,
     CONF_LOGGING_LEVEL,
+    DEFAULT_LOG_COLOR,
+    DEFAULT_LOG_DATE_FORMAT,
+    DEFAULT_LOG_DIR,
+    DEFAULT_LOG_FILE_NAME,
+    DEFAULT_LOG_FORMAT,
     DEFAULT_LOG_LEVEL,
     ENV_PREFIX_LOGGING,
     LogLevel,
 )
+
+_LOGGER = logging.getLogger(APP_NAME)
 
 
 class LoggingConfig(BaseModel):
@@ -29,12 +42,32 @@ class LoggingConfig(BaseModel):
     _env_prefix = ENV_PREFIX_LOGGING
 
     level: LogLevel = DEFAULT_LOG_LEVEL
+    format: str = DEFAULT_LOG_FORMAT
+    date_format: str = DEFAULT_LOG_DATE_FORMAT
+    dir: Path | None = DEFAULT_LOG_DIR
+    file_name: str | None = DEFAULT_LOG_FILE_NAME
+    color: bool = DEFAULT_LOG_COLOR
+
+    @property
+    def log_file(self) -> Path | None:
+        """Return the resolved log file path, or None if file logging is disabled."""
+        if self.dir is None or self.file_name is None:
+            return None
+        return self.dir / self.file_name
 
     @field_validator(CONF_LOGGING_LEVEL, mode="before")
     @classmethod
     def _coerce_level(cls, v: object) -> object:
         if isinstance(v, str):
             return v.upper()
+        return v
+
+    @field_validator(CONF_LOGGING_DIR, CONF_LOGGING_FILE_NAME, mode="before")
+    @classmethod
+    def _coerce_nullable_str(cls, v: object) -> object:
+        """Treat empty-string values as None (disables file logging)."""
+        if isinstance(v, str) and not v.strip():
+            return None
         return v
 
 
@@ -102,10 +135,13 @@ def _apply_env_vars(
         env_value = os.environ.get(env_var)
         if env_value is not None:
             if name in yaml_data:
-                logging.warning(
-                    f"'{name}' is set in both '{config_file_name}' "
-                    f"({yaml_data[name]!r}) and {env_var} ({env_value!r}). "
-                    "Env var takes precedence."
+                _LOGGER.warning(
+                    "'%s' is set in both '%s' (%r) and %s (%r). Env var takes precedence.",
+                    name,
+                    config_file_name,
+                    yaml_data[name],
+                    env_var,
+                    env_value,
                 )
             merged[name] = env_value
     return merged
@@ -115,6 +151,8 @@ def load_config(
     config_dir: Path,
     config_file_name: str,
     log_level: LogLevel | None = None,
+    log_dir: Path | None = None,
+    log_file_name: str | None = None,
 ) -> Config:
     """Load and validate configuration from all sources.
 
@@ -128,8 +166,15 @@ def load_config(
 
     config_path = config_dir / config_file_name
     cli_values: dict[str, dict[str, Any]] = {}
+    logging_cli: dict[str, Any] = {}
     if log_level is not None:
-        cli_values[CONF_LOGGING] = {CONF_LOGGING_LEVEL: log_level}
+        logging_cli[CONF_LOGGING_LEVEL] = log_level
+    if log_dir is not None:
+        logging_cli[CONF_LOGGING_DIR] = log_dir
+    if log_file_name is not None:
+        logging_cli[CONF_LOGGING_FILE_NAME] = log_file_name
+    if logging_cli:
+        cli_values[CONF_LOGGING] = logging_cli
 
     if not config_path.is_file():
         typer.echo(
@@ -139,7 +184,16 @@ def load_config(
         with config_path.open("w", encoding="utf-8") as config_file:
             yaml.safe_dump(
                 _to_yaml_serializable(
-                    {CONF_LOGGING: {CONF_LOGGING_LEVEL: DEFAULT_LOG_LEVEL}}
+                    {
+                        CONF_LOGGING: {
+                            CONF_LOGGING_LEVEL: DEFAULT_LOG_LEVEL,
+                            CONF_LOGGING_FORMAT: DEFAULT_LOG_FORMAT,
+                            CONF_LOGGING_DATE_FORMAT: DEFAULT_LOG_DATE_FORMAT,
+                            CONF_LOGGING_DIR: DEFAULT_LOG_DIR,
+                            CONF_LOGGING_FILE_NAME: DEFAULT_LOG_FILE_NAME,
+                            CONF_LOGGING_COLOR: DEFAULT_LOG_COLOR,
+                        }
+                    }
                 ),
                 config_file,
             )
