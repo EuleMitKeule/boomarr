@@ -26,6 +26,58 @@ def version() -> None:
     typer.echo(f"Boomarr version {VERSION}")
 
 
+@app.command(
+    "scan",
+    help="Trigger a one-shot full library scan.",
+)
+def scan() -> None:
+    """Trigger a one-shot full library scan.
+
+    Walks the source library, creates symlinks for matching audio tracks,
+    and exits when complete.
+    """
+    typer.echo("not implemented")
+
+
+@app.command(
+    "watch",
+    help="Start continuous watch mode.",
+)
+def watch() -> None:
+    """Start continuous watch mode.
+
+    Monitors the source library for changes and keeps symlinks up to date
+    without requiring manual rescans.
+    """
+    typer.echo("not implemented")
+
+
+@app.command(
+    "clean",
+    help="Run stale symlink cleanup only.",
+)
+def clean() -> None:
+    """Run stale symlink cleanup only.
+
+    Removes symlinks in the destination directory that no longer correspond
+    to a valid source file.
+    """
+    typer.echo("not implemented")
+
+
+@app.command(
+    "status",
+    help="Show cache stats and last run info.",
+)
+def status() -> None:
+    """Show cache stats and last run info.
+
+    Displays a summary of the current cache state and when the last scan
+    was performed.
+    """
+    typer.echo("not implemented")
+
+
 def main() -> None:
     """Main entry point.
 
