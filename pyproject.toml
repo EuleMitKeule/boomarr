@@ -1,0 +1,22 @@
+[project]
+name = "boomarr"
+version = "0.0.0-dev"
+description = "🔊 Symlink-based audio language filter for Plex & Jellyfin - automatically mirrors your media library, keeping only files with your desired audio tracks."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "typer[all]>=0.24.1",
+]
+
+[project.scripts]
+boomarr = "boomarr.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.1.0",
+]
