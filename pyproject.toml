@@ -5,7 +5,10 @@ description = "🔊 Symlink-based audio language filter for Plex & Jellyfin - au
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "typer[all]>=0.24.1",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.2",
+    "pyyaml>=6.0.3",
+    "typer>=0.24.1",
 ]
 
 [project.scripts]
