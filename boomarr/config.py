@@ -8,7 +8,7 @@ import os
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import typer
 import yaml
@@ -39,7 +39,7 @@ _LOGGER = logging.getLogger(APP_NAME)
 class LoggingConfig(BaseModel):
     """Logging sub-configuration."""
 
-    _env_prefix = ENV_PREFIX_LOGGING
+    _env_prefix: ClassVar[str] = ENV_PREFIX_LOGGING
 
     level: LogLevel = DEFAULT_LOG_LEVEL
     format: str = DEFAULT_LOG_FORMAT
@@ -97,6 +97,8 @@ def _to_yaml_serializable(obj: Any) -> Any:
     """Recursively convert enums and other non-YAML types to YAML-serializable forms."""
     if isinstance(obj, Enum):
         return obj.value
+    if isinstance(obj, Path):
+        return str(obj)
     if isinstance(obj, dict):
         return {k: _to_yaml_serializable(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
