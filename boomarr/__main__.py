@@ -5,13 +5,15 @@ main execution point when Boomarr is invoked from the command line.
 """
 
 import logging
+import os
+import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from dotenv import load_dotenv
 
-from boomarr.config import Config, load_config
+from boomarr.config import Config, LibraryConfig, load_config
 from boomarr.const import (
     APP_NAME,
     DEFAULT_CONFIG_DIR,
@@ -23,6 +25,7 @@ from boomarr.const import (
     ENV_LOG_DIR,
     ENV_LOG_FILE_NAME,
     ENV_LOG_LEVEL,
+    ENV_SKIP_READONLY_CHECK,
     VERSION,
     LogLevel,
 )
@@ -80,6 +83,14 @@ LogFileNameOpt = Annotated[
         help=f"Log file name. Default: '{DEFAULT_LOG_FILE_NAME}'. Set to empty string to disable file logging.",
     ),
 ]
+SkipReadonlyCheckOpt = Annotated[
+    bool,
+    typer.Option(
+        "--skip-readonly-check",
+        envvar=ENV_SKIP_READONLY_CHECK,
+        help="Skip the source directory read-only check. For development only — never use in production.",
+    ),
+]
 
 
 def _init_config(
@@ -99,6 +110,42 @@ def _init_config(
     return config
 
 
+def verify_source_dirs_readonly(
+    libraries: list[LibraryConfig], *, skip: bool = False
+) -> None:
+    """Verify that all source (input) directories are not writable.
+
+    This is a critical safety check that MUST run before any processing.
+    Source directories must be mounted read-only to guarantee that Boomarr
+    can never accidentally modify the original media files.
+
+    Pass ``skip=True`` (via ``--skip-readonly-check`` or the
+    ``SKIP_READONLY_CHECK`` env var) to bypass this check during development.
+
+    Exits with code 1 if any existing source directory is writable.
+    """
+    if skip:
+        _LOGGER.warning(
+            "Source directory read-only check is disabled. "
+            "Do NOT use this in production."
+        )
+        return
+
+    for library in libraries:
+        input_path = library.input_path
+        if not input_path.is_dir():
+            continue
+        if os.access(input_path, os.W_OK):
+            _LOGGER.critical(
+                "Source directory '%s' (library '%s') is writable! "
+                "Source directories MUST be mounted read-only to prevent "
+                "accidental data modification. Aborting.",
+                input_path,
+                library.name,
+            )
+            sys.exit(1)
+
+
 @app.command("version", help="Show version information.")
 def version() -> None:
     """Show version information.
@@ -115,6 +162,7 @@ def scan(
     log_level: LogLevelOpt = None,
     log_dir: LogDirOpt = None,
     log_file_name: LogFileNameOpt = None,
+    skip_readonly_check: SkipReadonlyCheckOpt = False,
 ) -> None:
     """Trigger a one-shot full library scan.
 
@@ -129,6 +177,8 @@ def scan(
     if not config.libraries:
         _LOGGER.warning("No libraries configured — nothing to scan")
         return
+
+    verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
 
     factory = PipelineFactory()
     pipeline = factory.for_scan()
@@ -156,14 +206,20 @@ def watch(
     log_level: LogLevelOpt = None,
     log_dir: LogDirOpt = None,
     log_file_name: LogFileNameOpt = None,
+    skip_readonly_check: SkipReadonlyCheckOpt = False,
 ) -> None:
     """Start continuous watch mode.
 
     Monitors the source library for changes and keeps symlinks up to date
     without requiring manual rescans.
     """
-    _init_config(config_dir, config_file_name, log_level, log_dir, log_file_name)
+    config = _init_config(
+        config_dir, config_file_name, log_level, log_dir, log_file_name
+    )
     _LOGGER.info("Starting watch mode")
+
+    verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
+
     typer.echo("not implemented")
 
 
@@ -174,6 +230,7 @@ def clean(
     log_level: LogLevelOpt = None,
     log_dir: LogDirOpt = None,
     log_file_name: LogFileNameOpt = None,
+    skip_readonly_check: SkipReadonlyCheckOpt = False,
 ) -> None:
     """Run stale symlink cleanup only.
 
@@ -188,6 +245,8 @@ def clean(
     if not config.libraries:
         _LOGGER.warning("No libraries configured — nothing to clean")
         return
+
+    verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
 
     factory = PipelineFactory()
     pipeline = factory.for_clean()
