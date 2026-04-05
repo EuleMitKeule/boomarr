@@ -65,3 +65,13 @@ CONF_LOGGING_ROTATION_ENABLED = "enabled"
 CONF_LOGGING_ROTATION_MAX_BYTES = "max_bytes"
 CONF_LOGGING_ROTATION_BACKUP_COUNT = "backup_count"
 CONF_LOGGING_ROTATION_ROTATE_ON_START = "rotate_on_start"
+
+CONF_LIBRARIES = "libraries"
+CONF_LIBRARY_NAME = "name"
+CONF_LIBRARY_INPUT_PATH = "input_path"
+CONF_LIBRARY_OUTPUT_PATH = "output_path"
+CONF_LIBRARY_LANGUAGES = "languages"
+
+MEDIA_EXTENSIONS: frozenset[str] = frozenset(
+    {".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".flv", ".mov", ".webm"}
+)

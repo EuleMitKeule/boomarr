@@ -18,6 +18,7 @@ chown -R boomarr:boomarr /app "$CONFIG_DIR"
 case "$LOG_DIR" in
   "$CONFIG_DIR"/*)
     mkdir -p "$LOG_DIR"
+    chown boomarr:boomarr "$LOG_DIR"
     ;;
   *)
     mkdir -p "$LOG_DIR"

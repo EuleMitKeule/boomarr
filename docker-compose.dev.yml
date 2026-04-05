@@ -9,5 +9,5 @@ services:
       TZ: UTC
       LOG_LEVEL: debug
     volumes:
-      - ./config:/config
+      - ./config-docker:/config
     command: boomarr watch

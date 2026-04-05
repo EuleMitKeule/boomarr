@@ -27,6 +27,9 @@ from boomarr.const import (
     LogLevel,
 )
 from boomarr.log import setup_logging
+from boomarr.models import ScanResult
+from boomarr.pipeline import PipelineFactory
+from boomarr.processor import LibraryProcessor
 
 _LOGGER = logging.getLogger(APP_NAME)
 
@@ -118,9 +121,32 @@ def scan(
     Walks the source library, creates symlinks for matching audio tracks,
     and exits when complete.
     """
-    _init_config(config_dir, config_file_name, log_level, log_dir, log_file_name)
+    config = _init_config(
+        config_dir, config_file_name, log_level, log_dir, log_file_name
+    )
     _LOGGER.info("Starting scan")
-    typer.echo("not implemented")
+
+    if not config.libraries:
+        _LOGGER.warning("No libraries configured — nothing to scan")
+        return
+
+    factory = PipelineFactory()
+    pipeline = factory.for_scan()
+    processor = LibraryProcessor(pipeline)
+    total = ScanResult()
+
+    for library in config.libraries:
+        result = processor.process_library(library)
+        total.merge(result)
+
+    _LOGGER.info(
+        "Scan complete: %d created, %d removed, %d unchanged, %d skipped, %d errors",
+        total.created,
+        total.removed,
+        total.unchanged,
+        total.skipped,
+        total.errors,
+    )
 
 
 @app.command("watch", help="Start continuous watch mode.")
@@ -154,9 +180,24 @@ def clean(
     Removes symlinks in the destination directory that no longer correspond
     to a valid source file.
     """
-    _init_config(config_dir, config_file_name, log_level, log_dir, log_file_name)
+    config = _init_config(
+        config_dir, config_file_name, log_level, log_dir, log_file_name
+    )
     _LOGGER.info("Starting clean")
-    typer.echo("not implemented")
+
+    if not config.libraries:
+        _LOGGER.warning("No libraries configured — nothing to clean")
+        return
+
+    factory = PipelineFactory()
+    pipeline = factory.for_clean()
+    processor = LibraryProcessor(pipeline)
+    total_removed = 0
+
+    for library in config.libraries:
+        total_removed += processor.clean_library(library)
+
+    _LOGGER.info("Clean complete: %d stale symlinks removed", total_removed)
 
 
 @app.command("status", help="Show cache stats and last run info.")
@@ -174,7 +215,17 @@ def status(
     """
     _init_config(config_dir, config_file_name, log_level, log_dir, log_file_name)
     _LOGGER.info("Showing status")
-    typer.echo("not implemented")
+
+    factory = PipelineFactory()
+    pipeline = factory.for_scan()
+    stats = pipeline.state.get_stats()
+
+    _LOGGER.info(
+        "Cache stats: %d total, %d matched, last scan: %s",
+        stats.get("total", 0),
+        stats.get("matched", 0),
+        stats.get("last_scan"),
+    )
 
 
 def main() -> None:

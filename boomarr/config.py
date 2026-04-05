@@ -20,6 +20,11 @@ from boomarr.const import (
     CONF_CONFIG_DIR,
     CONF_GENERAL_TZ,
     CONF_GENERAL_UMASK,
+    CONF_LIBRARIES,
+    CONF_LIBRARY_INPUT_PATH,
+    CONF_LIBRARY_LANGUAGES,
+    CONF_LIBRARY_NAME,
+    CONF_LIBRARY_OUTPUT_PATH,
     CONF_LOGGING,
     CONF_LOGGING_DIR,
     CONF_LOGGING_FILE_NAME,
@@ -161,6 +166,34 @@ class LoggingConfig(BaseModel):
         return v
 
 
+class LibraryConfig(BaseModel):
+    """Per-library configuration."""
+
+    name: str
+    input_path: Path
+    output_path: Path
+    languages: list[str]
+
+    @field_validator(CONF_LIBRARY_NAME, mode="after")
+    @classmethod
+    def _validate_name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Library name must not be empty")
+        return v.strip()
+
+    @field_validator(CONF_LIBRARY_LANGUAGES, mode="after")
+    @classmethod
+    def _validate_languages(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("Library must have at least one language")
+        return [lang.strip().lower() for lang in v]
+
+    @field_validator(CONF_LIBRARY_INPUT_PATH, CONF_LIBRARY_OUTPUT_PATH, mode="after")
+    @classmethod
+    def _resolve_paths(cls, v: Path) -> Path:
+        return v.resolve()
+
+
 class Config(BaseModel):
     """Boomarr root configuration."""
 
@@ -168,12 +201,24 @@ class Config(BaseModel):
     config_file: str
     general: GeneralConfig
     logging: LoggingConfig
+    libraries: list[LibraryConfig] = Field(default_factory=list)
 
     @field_validator(CONF_CONFIG_DIR, mode="after")
     @classmethod
     def _resolve_config_dir_to_absolute(cls, v: Path) -> Path:
         """Convert config directory path to absolute."""
         return v.resolve()
+
+    @field_validator(CONF_LIBRARIES, mode="after")
+    @classmethod
+    def _validate_unique_library_names(
+        cls, v: list[LibraryConfig]
+    ) -> list[LibraryConfig]:
+        names = [lib.name for lib in v]
+        if len(names) != len(set(names)):
+            dupes = [n for n in names if names.count(n) > 1]
+            raise ValueError(f"Duplicate library names: {set(dupes)}")
+        return v
 
 
 _config: Config | None = None
@@ -311,10 +356,13 @@ def load_config(
         sub_merged.update(cli_values.get(field_name) or {})
         sub_configs[field_name] = sub_merged
 
+    libraries_raw = yaml_data.get(CONF_LIBRARIES) or []
+
     try:
         _config = Config(
             config_dir=config_dir,
             config_file=config_file_name,
+            libraries=libraries_raw,
             **sub_configs,
         )
     except ValidationError as exc:
