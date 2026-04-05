@@ -90,7 +90,7 @@ def _init_config(
     config = load_config(
         config_dir, config_file_name, log_level, log_dir, log_file_name
     )
-    setup_logging(config.logging)
+    setup_logging(config.logging, tz=config.general.tz)
     _LOGGER.info("boomarr version %s startup complete", VERSION)
     _LOGGER.debug("Loaded config: %s", config.model_dump_json(indent=2))
     return config

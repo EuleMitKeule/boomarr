@@ -1,7 +1,7 @@
 FROM python:3.14-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg gosu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -14,9 +14,22 @@ RUN mkdir -p boomarr && touch boomarr/__init__.py boomarr/py.typed \
 COPY boomarr/ ./boomarr/
 RUN pip install --no-cache-dir --no-deps .
 
-RUN useradd --create-home --no-log-init --uid 1000 boomarr
+RUN groupadd -g 1000 boomarr \
+    && useradd -u 1000 -g boomarr -m --no-log-init boomarr \
+    && mkdir -p /config \
+    && chown boomarr:boomarr /app /config
 
-USER boomarr
+ENV PUID=1000
+ENV PGID=1000
+ENV UMASK=022
+ENV TZ=UTC
+ENV CONFIG_DIR=/config
+ENV LOG_DIR=/config/logs
 
-ENTRYPOINT ["boomarr"]
-CMD ["--help"]
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+VOLUME /config
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["boomarr", "--help"]

@@ -4,7 +4,11 @@ services:
     container_name: boomarr
     restart: unless-stopped
     environment:
+      PUID: 1000
+      PGID: 1000
+      UMASK: "022"
+      TZ: UTC
       LOG_LEVEL: info
     volumes:
-      - </path/to/boomarr/config>:/app/config
-    command: watch
+      - </path/to/boomarr/config>:/config
+    command: boomarr watch

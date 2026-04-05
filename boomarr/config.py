@@ -6,6 +6,7 @@ Handles loading, parsing, and validation of Boomarr configuration.
 import logging
 import os
 import sys
+import zoneinfo
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
@@ -17,6 +18,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from boomarr.const import (
     APP_NAME,
     CONF_CONFIG_DIR,
+    CONF_GENERAL_TZ,
+    CONF_GENERAL_UMASK,
     CONF_LOGGING,
     CONF_LOGGING_DIR,
     CONF_LOGGING_FILE_NAME,
@@ -27,6 +30,16 @@ from boomarr.const import (
     DEFAULT_LOG_FILE_NAME,
     DEFAULT_LOG_FORMAT,
     DEFAULT_LOG_LEVEL,
+    DEFAULT_LOG_ROTATION_BACKUP_COUNT,
+    DEFAULT_LOG_ROTATION_ENABLED,
+    DEFAULT_LOG_ROTATION_MAX_BYTES,
+    DEFAULT_LOG_ROTATION_ROTATE_ON_START,
+    DEFAULT_PGID,
+    DEFAULT_PUID,
+    DEFAULT_TZ,
+    DEFAULT_UMASK,
+    ENV_PREFIX_GENERAL,
+    ENV_PREFIX_LOG_ROTATION,
     ENV_PREFIX_LOGGING,
     LogLevel,
 )
@@ -34,10 +47,79 @@ from boomarr.const import (
 _LOGGER = logging.getLogger(APP_NAME)
 
 
+class GeneralConfig(BaseModel):
+    """General sub-configuration for timezone, user/group IDs, and umask."""
+
+    _env_prefix: ClassVar[str] = ENV_PREFIX_GENERAL
+
+    tz: str = Field(default=DEFAULT_TZ, validate_default=True)
+    puid: int = Field(default=DEFAULT_PUID, validate_default=True)
+    pgid: int = Field(default=DEFAULT_PGID, validate_default=True)
+    umask: str = Field(default=DEFAULT_UMASK, validate_default=True)
+
+    @field_validator(CONF_GENERAL_TZ, mode="before")
+    @classmethod
+    def _coerce_tz(cls, v: object) -> object:
+        """Treat empty/whitespace-only strings as None (falls back to default)."""
+        if isinstance(v, str) and not v.strip():
+            return DEFAULT_TZ
+        return v
+
+    @field_validator(CONF_GENERAL_TZ, mode="after")
+    @classmethod
+    def _validate_tz(cls, v: str) -> str:
+        """Validate that the timezone is a known IANA timezone."""
+        try:
+            zoneinfo.ZoneInfo(v)
+        except KeyError:
+            raise ValueError(f"Invalid timezone: '{v}'")
+        return v
+
+    @field_validator(CONF_GENERAL_UMASK, mode="before")
+    @classmethod
+    def _coerce_umask(cls, v: object) -> object:
+        """Convert integer umask values (from YAML) to zero-padded strings."""
+        if isinstance(v, int):
+            return f"{v:03d}"
+        return v
+
+    @field_validator(CONF_GENERAL_UMASK, mode="after")
+    @classmethod
+    def _validate_umask(cls, v: str) -> str:
+        """Validate that the umask is a valid octal string in range 000-777."""
+        try:
+            val = int(v, 8)
+        except ValueError:
+            raise ValueError(
+                f"Invalid umask '{v}': must be a valid octal string (e.g. '022')"
+            )
+        if val < 0 or val > 0o777:
+            raise ValueError(f"Umask value '{v}' out of range (000-777)")
+        return v
+
+
+class LogRotationConfig(BaseModel):
+    """Log file rotation sub-configuration."""
+
+    _env_prefix: ClassVar[str] = ENV_PREFIX_LOG_ROTATION
+
+    enabled: bool = Field(default=DEFAULT_LOG_ROTATION_ENABLED, validate_default=True)
+    max_bytes: int = Field(
+        default=DEFAULT_LOG_ROTATION_MAX_BYTES, validate_default=True
+    )
+    backup_count: int = Field(
+        default=DEFAULT_LOG_ROTATION_BACKUP_COUNT, validate_default=True
+    )
+    rotate_on_start: bool = Field(
+        default=DEFAULT_LOG_ROTATION_ROTATE_ON_START, validate_default=True
+    )
+
+
 class LoggingConfig(BaseModel):
     """Logging sub-configuration."""
 
     _env_prefix: ClassVar[str] = ENV_PREFIX_LOGGING
+    _yaml_excluded: ClassVar[frozenset[str]] = frozenset({CONF_LOGGING_DIR})
 
     level: LogLevel = Field(default=DEFAULT_LOG_LEVEL, validate_default=True)
     format: str = Field(default=DEFAULT_LOG_FORMAT, validate_default=True)
@@ -45,6 +127,9 @@ class LoggingConfig(BaseModel):
     dir: Path | None = Field(default=DEFAULT_LOG_DIR, validate_default=True)
     file_name: str | None = Field(default=DEFAULT_LOG_FILE_NAME, validate_default=True)
     color: bool = Field(default=DEFAULT_LOG_COLOR, validate_default=True)
+    rotation: LogRotationConfig = Field(
+        default_factory=LogRotationConfig, validate_default=True
+    )
 
     @property
     def log_file(self) -> Path | None:
@@ -81,6 +166,7 @@ class Config(BaseModel):
 
     config_dir: Path
     config_file: str
+    general: GeneralConfig
     logging: LoggingConfig
 
     @field_validator(CONF_CONFIG_DIR, mode="after")
@@ -143,14 +229,23 @@ def _apply_env_vars(
     """
     prefix: str = getattr(model_cls, "_env_prefix", field_name.upper())
     merged = dict(yaml_data)
-    for name in model_cls.model_fields:
-        env_var = f"{prefix}_{name}".upper()
+    for name, field_info in model_cls.model_fields.items():
+        if isinstance(field_info.annotation, type) and issubclass(
+            field_info.annotation, BaseModel
+        ):
+            nested_yaml = merged.get(name) or {}
+            merged[name] = _apply_env_vars(
+                field_info.annotation, nested_yaml, config_file_name, name
+            )
+            continue
+        env_var = f"{prefix}_{name}".upper() if prefix else name.upper()
         env_value = os.environ.get(env_var)
         if env_value is not None:
             if name in yaml_data:
+                display_prefix = prefix if prefix else field_name.upper()
                 _LOGGER.warning(
                     "'%s %s' is set in both '%s' (%r) and %s (%r). Env var takes precedence.",
-                    prefix,
+                    display_prefix,
                     name,
                     config_file_name,
                     yaml_data[name],
@@ -206,6 +301,10 @@ def load_config(
         ):
             continue
         yaml_sub = yaml_data.get(field_name) or {}
+        yaml_excluded: frozenset[str] = getattr(
+            field_info.annotation, "_yaml_excluded", frozenset()
+        )
+        yaml_sub = {k: v for k, v in yaml_sub.items() if k not in yaml_excluded}
         sub_merged = _apply_env_vars(
             field_info.annotation, yaml_sub, config_file_name, field_name
         )

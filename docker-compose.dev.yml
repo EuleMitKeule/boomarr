@@ -3,7 +3,11 @@ services:
     build: .
     container_name: boomarr
     environment:
+      PUID: 1000
+      PGID: 1000
+      UMASK: "022"
+      TZ: UTC
       LOG_LEVEL: debug
     volumes:
-      - ./config:/app/config
-    command: watch
+      - ./config:/config
+    command: boomarr watch

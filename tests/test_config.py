@@ -8,7 +8,9 @@ import pytest
 
 from boomarr.config import (
     Config,
+    GeneralConfig,
     LoggingConfig,
+    LogRotationConfig,
     get_config,
     load_config,
 )
@@ -19,6 +21,14 @@ from boomarr.const import (
     DEFAULT_LOG_FILE_NAME,
     DEFAULT_LOG_FORMAT,
     DEFAULT_LOG_LEVEL,
+    DEFAULT_LOG_ROTATION_BACKUP_COUNT,
+    DEFAULT_LOG_ROTATION_ENABLED,
+    DEFAULT_LOG_ROTATION_MAX_BYTES,
+    DEFAULT_LOG_ROTATION_ROTATE_ON_START,
+    DEFAULT_PGID,
+    DEFAULT_PUID,
+    DEFAULT_TZ,
+    DEFAULT_UMASK,
     LogLevel,
 )
 
@@ -85,6 +95,121 @@ class TestLoggingConfig:
 
         with pytest.raises(ValidationError):
             LoggingConfig(level=123)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# GeneralConfig
+# ---------------------------------------------------------------------------
+
+
+class TestGeneralConfig:
+    def test_defaults(self) -> None:
+        cfg = GeneralConfig()
+        assert cfg.tz == DEFAULT_TZ
+        assert cfg.puid == DEFAULT_PUID
+        assert cfg.pgid == DEFAULT_PGID
+        assert cfg.umask == DEFAULT_UMASK
+
+    def test_valid_timezone(self) -> None:
+        cfg = GeneralConfig(tz="America/New_York")
+        assert cfg.tz == "America/New_York"
+
+    def test_invalid_timezone_raises(self) -> None:
+        with pytest.raises(Exception):
+            GeneralConfig(tz="Not/A_Timezone")
+
+    def test_empty_string_tz_becomes_default(self) -> None:
+        cfg = GeneralConfig(tz="")
+        assert cfg.tz == DEFAULT_TZ
+
+    def test_whitespace_string_tz_becomes_default(self) -> None:
+        cfg = GeneralConfig(tz="   ")
+        assert cfg.tz == DEFAULT_TZ
+
+    def test_tz_non_string_passthrough(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            GeneralConfig(tz=123)  # type: ignore[arg-type]
+
+    def test_valid_umask(self) -> None:
+        cfg = GeneralConfig(umask="077")
+        assert cfg.umask == "077"
+
+    def test_umask_int_coercion(self) -> None:
+        """YAML parses unquoted 022 as int 22; should be zero-padded to '022'."""
+        cfg = GeneralConfig(umask=22)  # type: ignore[arg-type]
+        assert cfg.umask == "022"
+
+    def test_umask_int_single_digit(self) -> None:
+        cfg = GeneralConfig(umask=0)  # type: ignore[arg-type]
+        assert cfg.umask == "000"
+
+    def test_umask_invalid_octal_raises(self) -> None:
+        with pytest.raises(Exception, match="Invalid umask"):
+            GeneralConfig(umask="899")
+
+    def test_umask_out_of_range_raises(self) -> None:
+        with pytest.raises(Exception, match="out of range"):
+            GeneralConfig(umask="1000")
+
+    def test_umask_non_int_non_string_passthrough(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            GeneralConfig(umask=[1, 2, 3])  # type: ignore[arg-type]
+
+    def test_custom_puid_pgid(self) -> None:
+        cfg = GeneralConfig(puid=500, pgid=600)
+        assert cfg.puid == 500
+        assert cfg.pgid == 600
+
+
+# ---------------------------------------------------------------------------
+# LogRotationConfig
+# ---------------------------------------------------------------------------
+
+
+class TestLogRotationConfig:
+    def test_defaults(self) -> None:
+        cfg = LogRotationConfig()
+        assert cfg.enabled == DEFAULT_LOG_ROTATION_ENABLED
+        assert cfg.max_bytes == DEFAULT_LOG_ROTATION_MAX_BYTES
+        assert cfg.backup_count == DEFAULT_LOG_ROTATION_BACKUP_COUNT
+        assert cfg.rotate_on_start == DEFAULT_LOG_ROTATION_ROTATE_ON_START
+
+    def test_custom_values(self) -> None:
+        cfg = LogRotationConfig(
+            enabled=False,
+            max_bytes=5_000_000,
+            backup_count=10,
+            rotate_on_start=False,
+        )
+        assert cfg.enabled is False
+        assert cfg.max_bytes == 5_000_000
+        assert cfg.backup_count == 10
+        assert cfg.rotate_on_start is False
+
+
+# ---------------------------------------------------------------------------
+# LoggingConfig – rotation field
+# ---------------------------------------------------------------------------
+
+
+class TestLoggingConfigRotation:
+    def test_default_rotation(self) -> None:
+        cfg = LoggingConfig()
+        assert isinstance(cfg.rotation, LogRotationConfig)
+        assert cfg.rotation.enabled is True
+
+    def test_custom_rotation(self) -> None:
+        cfg = LoggingConfig(
+            rotation=LogRotationConfig(
+                enabled=False, max_bytes=1024, backup_count=1, rotate_on_start=False
+            )
+        )
+        assert cfg.rotation.enabled is False
+        assert cfg.rotation.max_bytes == 1024
 
 
 # ---------------------------------------------------------------------------
@@ -288,16 +413,24 @@ class TestLoadConfigFields:
         assert cfg.logging.dir is not None
         assert cfg.logging.dir.is_absolute()
 
-    def test_logging_dir_none_stays_none(self, tmp_path: Path) -> None:
-        """Logging directory should stay None when not set."""
+    def test_logging_dir_yaml_is_ignored(self, tmp_path: Path) -> None:
+        """Logging directory set in YAML should be silently ignored (use env var or CLI)."""
         config_path = tmp_path / "config.yml"
         config_path.write_text(
             textwrap.dedent("""\
                 logging:
-                  dir:
+                  dir: /custom/yaml/path
             """),
             encoding="utf-8",
         )
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.logging.dir != Path("/custom/yaml/path")
+
+    def test_logging_dir_none_via_env_var(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Logging directory can still be disabled via env var."""
+        monkeypatch.setenv("LOG_DIR", "")
         cfg = load_config(tmp_path, "config.yml")
         assert cfg.logging.dir is None
 
@@ -399,3 +532,178 @@ class TestLoadConfigValidationError:
         with pytest.raises(SystemExit) as exc_info:
             load_config(tmp_path, "config.yml")
         assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# load_config – general config
+# ---------------------------------------------------------------------------
+
+
+class TestLoadConfigGeneral:
+    """Test general config loading through load_config."""
+
+    def _write_yaml(self, path: Path, content: str) -> None:
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+
+    def test_general_defaults_when_section_absent(self, tmp_path: Path) -> None:
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.general.tz == DEFAULT_TZ
+        assert cfg.general.puid == DEFAULT_PUID
+        assert cfg.general.pgid == DEFAULT_PGID
+        assert cfg.general.umask == DEFAULT_UMASK
+
+    def test_general_from_yaml(self, tmp_path: Path) -> None:
+        self._write_yaml(
+            tmp_path / "config.yml",
+            """\
+            general:
+              tz: Europe/Berlin
+              puid: 500
+              pgid: 600
+              umask: "077"
+            """,
+        )
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.general.tz == "Europe/Berlin"
+        assert cfg.general.puid == 500
+        assert cfg.general.pgid == 600
+        assert cfg.general.umask == "077"
+
+    def test_general_env_var_tz(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TZ", "Asia/Tokyo")
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.general.tz == "Asia/Tokyo"
+
+    def test_general_env_var_puid(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PUID", "999")
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.general.puid == 999
+
+    def test_general_env_var_pgid(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PGID", "888")
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.general.pgid == 888
+
+    def test_general_env_var_umask(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("UMASK", "077")
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.general.umask == "077"
+
+    def test_general_env_overrides_yaml(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._write_yaml(
+            tmp_path / "config.yml",
+            """\
+            general:
+              tz: UTC
+            """,
+        )
+        monkeypatch.setenv("TZ", "US/Pacific")
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.general.tz == "US/Pacific"
+
+    def test_general_env_clash_warning(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Warning should use GENERAL as display prefix for empty-prefix models."""
+        self._write_yaml(
+            tmp_path / "config.yml",
+            """\
+            general:
+              tz: UTC
+            """,
+        )
+        monkeypatch.setenv("TZ", "US/Eastern")
+        with caplog.at_level(logging.WARNING):
+            load_config(tmp_path, "config.yml")
+        assert any("'GENERAL tz'" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# load_config – log rotation config
+# ---------------------------------------------------------------------------
+
+
+class TestLoadConfigRotation:
+    """Test log rotation config loading through load_config."""
+
+    def _write_yaml(self, path: Path, content: str) -> None:
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+
+    def test_rotation_defaults_when_absent(self, tmp_path: Path) -> None:
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.logging.rotation.enabled is True
+        assert cfg.logging.rotation.max_bytes == DEFAULT_LOG_ROTATION_MAX_BYTES
+        assert cfg.logging.rotation.backup_count == DEFAULT_LOG_ROTATION_BACKUP_COUNT
+        assert cfg.logging.rotation.rotate_on_start is True
+
+    def test_rotation_from_yaml(self, tmp_path: Path) -> None:
+        self._write_yaml(
+            tmp_path / "config.yml",
+            """\
+            logging:
+              rotation:
+                enabled: false
+                max_bytes: 1048576
+                backup_count: 5
+                rotate_on_start: false
+            """,
+        )
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.logging.rotation.enabled is False
+        assert cfg.logging.rotation.max_bytes == 1_048_576
+        assert cfg.logging.rotation.backup_count == 5
+        assert cfg.logging.rotation.rotate_on_start is False
+
+    def test_rotation_env_var_enabled(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LOG_ROTATION_ENABLED", "false")
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.logging.rotation.enabled is False
+
+    def test_rotation_env_var_max_bytes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LOG_ROTATION_MAX_BYTES", "2097152")
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.logging.rotation.max_bytes == 2_097_152
+
+    def test_rotation_env_var_backup_count(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LOG_ROTATION_BACKUP_COUNT", "7")
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.logging.rotation.backup_count == 7
+
+    def test_rotation_env_overrides_yaml(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        self._write_yaml(
+            tmp_path / "config.yml",
+            """\
+            logging:
+              rotation:
+                enabled: true
+            """,
+        )
+        monkeypatch.setenv("LOG_ROTATION_ENABLED", "false")
+        with caplog.at_level(logging.WARNING):
+            cfg = load_config(tmp_path, "config.yml")
+        assert cfg.logging.rotation.enabled is False
+        assert any("LOG_ROTATION_ENABLED" in r.message for r in caplog.records)
