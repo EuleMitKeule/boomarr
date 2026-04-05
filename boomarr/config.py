@@ -12,16 +12,14 @@ from typing import Any, ClassVar
 
 import typer
 import yaml
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from boomarr.const import (
     APP_NAME,
+    CONF_CONFIG_DIR,
     CONF_LOGGING,
-    CONF_LOGGING_COLOR,
-    CONF_LOGGING_DATE_FORMAT,
     CONF_LOGGING_DIR,
     CONF_LOGGING_FILE_NAME,
-    CONF_LOGGING_FORMAT,
     CONF_LOGGING_LEVEL,
     DEFAULT_LOG_COLOR,
     DEFAULT_LOG_DATE_FORMAT,
@@ -41,12 +39,12 @@ class LoggingConfig(BaseModel):
 
     _env_prefix: ClassVar[str] = ENV_PREFIX_LOGGING
 
-    level: LogLevel = DEFAULT_LOG_LEVEL
-    format: str = DEFAULT_LOG_FORMAT
-    date_format: str = DEFAULT_LOG_DATE_FORMAT
-    dir: Path | None = DEFAULT_LOG_DIR
-    file_name: str | None = DEFAULT_LOG_FILE_NAME
-    color: bool = DEFAULT_LOG_COLOR
+    level: LogLevel = Field(default=DEFAULT_LOG_LEVEL, validate_default=True)
+    format: str = Field(default=DEFAULT_LOG_FORMAT, validate_default=True)
+    date_format: str = Field(default=DEFAULT_LOG_DATE_FORMAT, validate_default=True)
+    dir: Path | None = Field(default=DEFAULT_LOG_DIR, validate_default=True)
+    file_name: str | None = Field(default=DEFAULT_LOG_FILE_NAME, validate_default=True)
+    color: bool = Field(default=DEFAULT_LOG_COLOR, validate_default=True)
 
     @property
     def log_file(self) -> Path | None:
@@ -70,6 +68,13 @@ class LoggingConfig(BaseModel):
             return None
         return v
 
+    @field_validator(CONF_LOGGING_DIR, mode="after")
+    @classmethod
+    def _resolve_dir_to_absolute(cls, v: Path | None) -> Path | None:
+        if v is not None:
+            return v.resolve()
+        return v
+
 
 class Config(BaseModel):
     """Boomarr root configuration."""
@@ -77,6 +82,12 @@ class Config(BaseModel):
     config_dir: Path
     config_file: str
     logging: LoggingConfig
+
+    @field_validator(CONF_CONFIG_DIR, mode="after")
+    @classmethod
+    def _resolve_config_dir_to_absolute(cls, v: Path) -> Path:
+        """Convert config directory path to absolute."""
+        return v.resolve()
 
 
 _config: Config | None = None
@@ -138,7 +149,8 @@ def _apply_env_vars(
         if env_value is not None:
             if name in yaml_data:
                 _LOGGER.warning(
-                    "'%s' is set in both '%s' (%r) and %s (%r). Env var takes precedence.",
+                    "'%s %s' is set in both '%s' (%r) and %s (%r). Env var takes precedence.",
+                    prefix,
                     name,
                     config_file_name,
                     yaml_data[name],
@@ -179,26 +191,9 @@ def load_config(
         cli_values[CONF_LOGGING] = logging_cli
 
     if not config_path.is_file():
-        typer.echo(
-            f"Config file '{config_path}' not found. Creating with default values..."
-        )
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        with config_path.open("w", encoding="utf-8") as config_file:
-            yaml.safe_dump(
-                _to_yaml_serializable(
-                    {
-                        CONF_LOGGING: {
-                            CONF_LOGGING_LEVEL: DEFAULT_LOG_LEVEL,
-                            CONF_LOGGING_FORMAT: DEFAULT_LOG_FORMAT,
-                            CONF_LOGGING_DATE_FORMAT: DEFAULT_LOG_DATE_FORMAT,
-                            CONF_LOGGING_DIR: DEFAULT_LOG_DIR,
-                            CONF_LOGGING_FILE_NAME: DEFAULT_LOG_FILE_NAME,
-                            CONF_LOGGING_COLOR: DEFAULT_LOG_COLOR,
-                        }
-                    }
-                ),
-                config_file,
-            )
+        config_path.touch(exist_ok=True)
+        # TODO: Write template config file
 
     with config_path.open(encoding="utf-8") as config_file:
         yaml_data = yaml.safe_load(config_file) or {}

@@ -26,14 +26,15 @@ ENV_LOG_FILE_NAME = "LOG_FILE_NAME"
 ENV_PREFIX_LOGGING = "LOG"
 
 DEFAULT_CONFIG_DIR = Path("./config")
-DEFAULT_CONFIG_FILE_NAME = "config.yml"
+DEFAULT_CONFIG_FILE_NAME = "boomarr.yml"
 DEFAULT_LOG_LEVEL = LogLevel.INFO
 DEFAULT_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s: %(message)s"
 DEFAULT_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-DEFAULT_LOG_DIR: Path = Path("./config")
+DEFAULT_LOG_DIR: Path = Path("./config/logs")
 DEFAULT_LOG_FILE_NAME: str = "boomarr.log"
 DEFAULT_LOG_COLOR = True
 
+CONF_CONFIG_DIR = "config_dir"
 CONF_LOGGING = "logging"
 CONF_LOGGING_LEVEL = "level"
 CONF_LOGGING_FORMAT = "format"

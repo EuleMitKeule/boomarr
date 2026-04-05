@@ -1,0 +1,9 @@
+services:
+  boomarr:
+    build: .
+    container_name: boomarr
+    environment:
+      LOG_LEVEL: debug
+    volumes:
+      - ./config:/app/config
+    command: watch

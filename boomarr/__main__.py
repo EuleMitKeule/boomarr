@@ -87,9 +87,12 @@ def _init_config(
     log_file_name: str | None,
 ) -> Config:
     """Initialize a new config file with default values."""
-    config = load_config(config_dir, config_file_name, log_level, log_dir, log_file_name)
+    config = load_config(
+        config_dir, config_file_name, log_level, log_dir, log_file_name
+    )
     setup_logging(config.logging)
-    _LOGGER.info("Startup completed successfully.")
+    _LOGGER.info("boomarr version %s startup complete", VERSION)
+    _LOGGER.debug("Loaded config: %s", config.model_dump_json(indent=2))
     return config
 
 

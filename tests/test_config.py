@@ -1,5 +1,6 @@
 """Tests for boomarr.config."""
 
+import logging
 import textwrap
 from pathlib import Path
 
@@ -32,13 +33,13 @@ class TestLoggingConfig:
         assert cfg.level == DEFAULT_LOG_LEVEL
         assert cfg.format == DEFAULT_LOG_FORMAT
         assert cfg.date_format == DEFAULT_LOG_DATE_FORMAT
-        assert cfg.dir == DEFAULT_LOG_DIR
+        assert cfg.dir == DEFAULT_LOG_DIR.resolve()
         assert cfg.file_name == DEFAULT_LOG_FILE_NAME
         assert cfg.color == DEFAULT_LOG_COLOR
 
-    def test_log_file_combined(self) -> None:
-        cfg = LoggingConfig(dir=Path("/logs"), file_name="app.log")
-        assert cfg.log_file == Path("/logs/app.log")
+    def test_log_file_combined(self, tmp_path: Path) -> None:
+        cfg = LoggingConfig(dir=tmp_path, file_name="app.log")
+        assert cfg.log_file == tmp_path / "app.log"
 
     def test_log_file_none_when_dir_is_none(self) -> None:
         cfg = LoggingConfig(dir=None, file_name="app.log")
@@ -119,13 +120,20 @@ class TestLoadConfigFileCreation:
         load_config(tmp_path, "config.yml")
         with (tmp_path / "config.yml").open() as f:
             data = yaml.safe_load(f)
-        assert isinstance(data, dict)
-        assert "logging" in data
+        assert data is None
 
-    def test_creates_parent_dirs(self, tmp_path: Path) -> None:
-        nested = tmp_path / "a" / "b"
-        load_config(nested, "config.yml")
-        assert (nested / "config.yml").exists()
+    def test_auto_created_config_causes_no_env_var_warnings(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Env vars should not trigger 'set in both' warnings against auto-created defaults."""
+        monkeypatch.setenv("LOG_LEVEL", "INFO")
+        monkeypatch.setenv("LOG_DIR", str(tmp_path))
+        with caplog.at_level(logging.WARNING):
+            load_config(tmp_path, "config.yml")
+        assert not any("set in both" in r.message for r in caplog.records)
 
     def test_does_not_overwrite_existing_file(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.yml"
@@ -187,6 +195,25 @@ class TestLoadConfigPriority:
         cfg = load_config(tmp_path, "config.yml")
         assert cfg.logging.level == LogLevel.WARNING
 
+    def test_env_var_clash_warning_format(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Warning subject should include the env var prefix."""
+        self._write_yaml(
+            tmp_path / "config.yml",
+            """\
+            logging:
+              level: ERROR
+            """,
+        )
+        monkeypatch.setenv("LOG_LEVEL", "WARNING")
+        with caplog.at_level(logging.WARNING):
+            load_config(tmp_path, "config.yml")
+        assert any("'LOG level'" in r.message for r in caplog.records)
+
     def test_cli_overrides_env_var(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -242,6 +269,37 @@ class TestLoadConfigFields:
         cfg1 = load_config(tmp_path, "config.yml")
         cfg2 = load_config(tmp_path, "config.yml")
         assert cfg1 is not cfg2
+
+    def test_config_dir_is_absolute(self, tmp_path: Path) -> None:
+        """Config directory should be resolved to absolute path."""
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.config_dir.is_absolute()
+
+    def test_logging_dir_is_absolute_when_given_absolute(self, tmp_path: Path) -> None:
+        """An absolute logging directory should remain absolute."""
+        log_dir = tmp_path / "logs"
+        cfg = load_config(tmp_path, "config.yml", log_dir=log_dir)
+        assert cfg.logging.dir is not None
+        assert cfg.logging.dir.is_absolute()
+
+    def test_logging_dir_relative_resolved_to_absolute(self, tmp_path: Path) -> None:
+        """A relative logging directory should be resolved to an absolute path."""
+        cfg = load_config(tmp_path, "config.yml", log_dir=Path("logs"))
+        assert cfg.logging.dir is not None
+        assert cfg.logging.dir.is_absolute()
+
+    def test_logging_dir_none_stays_none(self, tmp_path: Path) -> None:
+        """Logging directory should stay None when not set."""
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(
+            textwrap.dedent("""\
+                logging:
+                  dir:
+            """),
+            encoding="utf-8",
+        )
+        cfg = load_config(tmp_path, "config.yml")
+        assert cfg.logging.dir is None
 
 
 # ---------------------------------------------------------------------------

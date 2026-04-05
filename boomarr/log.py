@@ -64,10 +64,3 @@ def setup_logging(config: LoggingConfig) -> None:
         file_handler = logging.FileHandler(config.log_file, encoding="utf-8")
         file_handler.setFormatter(plain_formatter)
         root.addHandler(file_handler)
-
-    _LOGGER.debug(
-        "Logging configured: level=%s, color=%s, file=%s",
-        config.level,
-        use_color,
-        config.log_file,
-    )

@@ -1,0 +1,10 @@
+services:
+  boomarr:
+    image: ghcr.io/eulemitkeule/boomarr:latest
+    container_name: boomarr
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: info
+    volumes:
+      - </path/to/boomarr/config>:/app/config
+    command: watch
