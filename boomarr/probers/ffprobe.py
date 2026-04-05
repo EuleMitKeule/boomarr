@@ -3,8 +3,8 @@
 import json
 import logging
 import subprocess
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from boomarr.models import AudioTrack, MediaInfo
 from boomarr.probers.base import MediaProber
@@ -13,8 +13,10 @@ _LOGGER = logging.getLogger(__name__)
 
 _FFPROBE_CMD = [
     "ffprobe",
-    "-v", "quiet",
-    "-print_format", "json",
+    "-v",
+    "quiet",
+    "-print_format",
+    "json",
     "-show_streams",
 ]
 

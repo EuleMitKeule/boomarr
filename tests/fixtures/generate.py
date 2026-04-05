@@ -65,7 +65,10 @@ _NON_MEDIA_SPECS: list[tuple[str, str]] = [
     # Sidecar files inside movie subfolders
     ("movies/Movie.In.Folder/poster.jpg", "stub:not-a-real-image\n"),
     ("movies/Movie.In.Folder/movie.nfo", "<nfo><title>Movie In Folder</title></nfo>\n"),
-    ("movies/Collection/Sequel/Sequel.Movie.DE.srt", "1\n00:00:00,000 --> 00:00:01,000\nSequel subtitle\n"),
+    (
+        "movies/Collection/Sequel/Sequel.Movie.DE.srt",
+        "1\n00:00:00,000 --> 00:00:01,000\nSequel subtitle\n",
+    ),
     # Sidecar files inside show season folders
     ("shows/Sample.Show/Season 1/banner.jpg", "stub:not-a-real-image\n"),
     ("shows/Sample.Show/Season 2/show.nfo", "<nfo><title>Sample Show</title></nfo>\n"),

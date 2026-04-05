@@ -16,6 +16,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from boomarr.config import (
+    AudioLanguageFilterConfig,
+    LibraryConfig,
+    SymlinkLibraryConfig,
+)
 from boomarr.filters.audio_language import AudioLanguageFilter
 from boomarr.filters.file_extension import FileExtensionFilter
 from boomarr.models import AudioTrack, MediaInfo
@@ -23,11 +28,6 @@ from boomarr.pipeline import Pipeline, ResolvedSymlinkLibrary
 from boomarr.processor import LibraryProcessor
 from boomarr.state import InMemoryStateStore
 from boomarr.symlinks import SymlinkManager
-from boomarr.config import (
-    AudioLanguageFilterConfig,
-    LibraryConfig,
-    SymlinkLibraryConfig,
-)
 from tests.test_processor import StubProber
 
 _skip_no_symlink = pytest.mark.skipif(
@@ -183,7 +183,10 @@ def _build_show_prober(
     """Build a StubProber for the shows tree using the given language map."""
     lm = lang_map or _SHOW_LANG_MAP
     return StubProber(
-        {str(files[label]): _media_info(files[label], langs) for label, langs in lm.items()}
+        {
+            str(files[label]): _media_info(files[label], langs)
+            for label, langs in lm.items()
+        }
     )
 
 
@@ -211,9 +214,7 @@ def _make_library(input_dir: Path, output_dir: Path) -> LibraryConfig:
         input_path=input_dir,
         output_path=output_dir,
         symlink_libraries=[
-            SymlinkLibraryConfig(
-                filters=[AudioLanguageFilterConfig(languages=["de"])]
-            )
+            SymlinkLibraryConfig(filters=[AudioLanguageFilterConfig(languages=["de"])])
         ],
     )
 
@@ -326,8 +327,12 @@ class TestMovieDirectoryStructure:
         # All German-containing MKVs should be linked
         assert output_dir / "Sample.Movie.DE.mkv" in linked_dests
         assert output_dir / "Sample.Movie.DE.EN.mkv" in linked_dests
-        assert output_dir / "Movie.In.Folder" / "Movie.In.Folder.DE.EN.mkv" in linked_dests
-        assert output_dir / "Collection" / "Sequel" / "Sequel.Movie.DE.mkv" in linked_dests
+        assert (
+            output_dir / "Movie.In.Folder" / "Movie.In.Folder.DE.EN.mkv" in linked_dests
+        )
+        assert (
+            output_dir / "Collection" / "Sequel" / "Sequel.Movie.DE.mkv" in linked_dests
+        )
 
         # English-only should NOT be linked
         assert output_dir / "Sample.Movie.EN.mkv" not in linked_dests
@@ -366,13 +371,23 @@ class TestMultiSeasonFiltering:
 
         # German-matching episodes (4 out of 6)
         assert output_dir / "Sample.Show" / "Season 1" / "S01E01.DE.mkv" in linked_dests
-        assert output_dir / "Sample.Show" / "Season 1" / "S01E03.DE.EN.mkv" in linked_dests
-        assert output_dir / "Sample.Show" / "Season 2" / "S02E01.DE.EN.mkv" in linked_dests
+        assert (
+            output_dir / "Sample.Show" / "Season 1" / "S01E03.DE.EN.mkv" in linked_dests
+        )
+        assert (
+            output_dir / "Sample.Show" / "Season 2" / "S02E01.DE.EN.mkv" in linked_dests
+        )
         assert output_dir / "Sample.Show" / "Season 2" / "S02E03.DE.mkv" in linked_dests
 
         # English-only episodes must NOT be linked
-        assert output_dir / "Sample.Show" / "Season 1" / "S01E02.EN.mkv" not in linked_dests
-        assert output_dir / "Sample.Show" / "Season 2" / "S02E02.EN.mkv" not in linked_dests
+        assert (
+            output_dir / "Sample.Show" / "Season 1" / "S01E02.EN.mkv"
+            not in linked_dests
+        )
+        assert (
+            output_dir / "Sample.Show" / "Season 2" / "S02E02.EN.mkv"
+            not in linked_dests
+        )
 
         assert result.created == 4
 
@@ -399,13 +414,23 @@ class TestMultiSeasonFiltering:
 
         # English-matching episodes (4 out of 6)
         assert output_dir / "Sample.Show" / "Season 1" / "S01E02.EN.mkv" in linked_dests
-        assert output_dir / "Sample.Show" / "Season 1" / "S01E03.DE.EN.mkv" in linked_dests
-        assert output_dir / "Sample.Show" / "Season 2" / "S02E01.DE.EN.mkv" in linked_dests
+        assert (
+            output_dir / "Sample.Show" / "Season 1" / "S01E03.DE.EN.mkv" in linked_dests
+        )
+        assert (
+            output_dir / "Sample.Show" / "Season 2" / "S02E01.DE.EN.mkv" in linked_dests
+        )
         assert output_dir / "Sample.Show" / "Season 2" / "S02E02.EN.mkv" in linked_dests
 
         # German-only episodes must NOT be linked
-        assert output_dir / "Sample.Show" / "Season 1" / "S01E01.DE.mkv" not in linked_dests
-        assert output_dir / "Sample.Show" / "Season 2" / "S02E03.DE.mkv" not in linked_dests
+        assert (
+            output_dir / "Sample.Show" / "Season 1" / "S01E01.DE.mkv"
+            not in linked_dests
+        )
+        assert (
+            output_dir / "Sample.Show" / "Season 2" / "S02E03.DE.mkv"
+            not in linked_dests
+        )
 
         assert result.created == 4
 
@@ -457,7 +482,9 @@ class TestMultiSeasonFiltering:
 
         linked_dests = {c.args[1] for c in symlinks.ensure_link.call_args_list}
 
-        assert output_dir / "Sample.Show" / "Season 1" / "banner.jpg" not in linked_dests
+        assert (
+            output_dir / "Sample.Show" / "Season 1" / "banner.jpg" not in linked_dests
+        )
         assert output_dir / "Sample.Show" / "Season 2" / "show.nfo" not in linked_dests
 
     def test_dual_symlink_libraries_de_and_en(self, tmp_path: Path) -> None:
@@ -500,17 +527,29 @@ class TestMultiSeasonFiltering:
 
         # DE library: 4 episodes
         assert output_de / "Sample.Show" / "Season 1" / "S01E01.DE.mkv" in linked_dests
-        assert output_de / "Sample.Show" / "Season 1" / "S01E03.DE.EN.mkv" in linked_dests
-        assert output_de / "Sample.Show" / "Season 2" / "S02E01.DE.EN.mkv" in linked_dests
+        assert (
+            output_de / "Sample.Show" / "Season 1" / "S01E03.DE.EN.mkv" in linked_dests
+        )
+        assert (
+            output_de / "Sample.Show" / "Season 2" / "S02E01.DE.EN.mkv" in linked_dests
+        )
         assert output_de / "Sample.Show" / "Season 2" / "S02E03.DE.mkv" in linked_dests
-        assert output_de / "Sample.Show" / "Season 1" / "S01E02.EN.mkv" not in linked_dests
+        assert (
+            output_de / "Sample.Show" / "Season 1" / "S01E02.EN.mkv" not in linked_dests
+        )
 
         # EN library: 4 episodes
         assert output_en / "Sample.Show" / "Season 1" / "S01E02.EN.mkv" in linked_dests
-        assert output_en / "Sample.Show" / "Season 1" / "S01E03.DE.EN.mkv" in linked_dests
-        assert output_en / "Sample.Show" / "Season 2" / "S02E01.DE.EN.mkv" in linked_dests
+        assert (
+            output_en / "Sample.Show" / "Season 1" / "S01E03.DE.EN.mkv" in linked_dests
+        )
+        assert (
+            output_en / "Sample.Show" / "Season 2" / "S02E01.DE.EN.mkv" in linked_dests
+        )
         assert output_en / "Sample.Show" / "Season 2" / "S02E02.EN.mkv" in linked_dests
-        assert output_en / "Sample.Show" / "Season 2" / "S02E03.DE.mkv" not in linked_dests
+        assert (
+            output_en / "Sample.Show" / "Season 2" / "S02E03.DE.mkv" not in linked_dests
+        )
 
         # 4 DE + 4 EN = 8 created total
         assert result.created == 8
@@ -581,8 +620,12 @@ class TestMultiSeasonFiltering:
         linked_dests = {c.args[1] for c in symlinks.ensure_link.call_args_list}
 
         # German-only episodes: S01E01, S02E03
-        assert output_en / "Sample.Show" / "Season 1" / "S01E01.DE.mkv" not in linked_dests
-        assert output_en / "Sample.Show" / "Season 2" / "S02E03.DE.mkv" not in linked_dests
+        assert (
+            output_en / "Sample.Show" / "Season 1" / "S01E01.DE.mkv" not in linked_dests
+        )
+        assert (
+            output_en / "Sample.Show" / "Season 2" / "S02E03.DE.mkv" not in linked_dests
+        )
 
     def test_counts_across_seasons(self, tmp_path: Path) -> None:
         """Result counts should be correct across multiple seasons."""
