@@ -15,6 +15,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from boomarr.config import (
     Config,
@@ -127,19 +128,34 @@ class PipelineFactory:
 
     def _resolve_symlink_libraries(
         self,
+        config: Config,
         library: LibraryConfig,
     ) -> list[ResolvedSymlinkLibrary]:
-        """Resolve symlink library configs into runtime objects."""
+        """Resolve symlink library configs into runtime objects.
+
+        The effective output base is ``library.output_path`` when set,
+        otherwise ``config.output_path``.  When using the global output
+        path, library name is included in the auto-generated directory
+        name to avoid collisions between libraries.
+        """
         resolved: list[ResolvedSymlinkLibrary] = []
+        base_output = cast(
+            Path,
+            library.output_path
+            if library.output_path is not None
+            else config.output_path,
+        )
+
         for sym_lib in library.symlink_libraries:
             filters = [self._build_post_probe_filter(fc) for fc in sym_lib.filters]
             if sym_lib.output_path is not None:
                 output_path = sym_lib.output_path
             elif sym_lib.name is not None:
-                output_path = library.output_path.parent / sym_lib.name
+                output_path = base_output / sym_lib.name
             else:
+                lib_slug = library.name.lower().replace(" ", "-")
                 combined_suffix = "-".join(f.suffix for f in filters)
-                output_path = Path(f"{library.output_path}-{combined_suffix}")
+                output_path = base_output / f"{lib_slug}-{combined_suffix}"
             resolved.append(
                 ResolvedSymlinkLibrary(filters=filters, output_path=output_path)
             )
@@ -162,7 +178,7 @@ class PipelineFactory:
         return Pipeline(
             probers=self._build_probers(prober_configs),
             pre_probe_filters=self._build_pre_probe_filters(pre_filter_configs),
-            symlink_libraries=self._resolve_symlink_libraries(library),
+            symlink_libraries=self._resolve_symlink_libraries(config, library),
             symlinks=SymlinkManager(),
             state=self._state,
         )
@@ -187,7 +203,7 @@ class PipelineFactory:
         return Pipeline(
             probers=self._build_probers(prober_configs),
             pre_probe_filters=[],
-            symlink_libraries=self._resolve_symlink_libraries(library),
+            symlink_libraries=self._resolve_symlink_libraries(config, library),
             symlinks=SymlinkManager(),
             state=self._state,
         )

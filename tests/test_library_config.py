@@ -78,7 +78,16 @@ class TestLibraryConfig:
             symlink_libraries=[_sym_lib()],
         )
         assert lib.input_path.is_absolute()
+        assert lib.output_path is not None
         assert lib.output_path.is_absolute()
+
+    def test_output_path_none_by_default(self) -> None:
+        lib = LibraryConfig(
+            name="Movies",
+            input_path=Path("/media"),
+            symlink_libraries=[_sym_lib()],
+        )
+        assert lib.output_path is None
 
     def test_name_stripped(self) -> None:
         lib = LibraryConfig(
@@ -315,3 +324,98 @@ class TestConfigLibraries:
         config_file.touch()
         config = load_config(tmp_path, "boomarr.yml")
         assert config.pre_probe_filters == [FileExtensionFilterConfig()]
+
+
+class TestOutputPathValidation:
+    """Tests for global/per-library output_path validation."""
+
+    def test_global_output_path_loaded_from_yaml(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {"output_path": "/media/filtered"}
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        config = load_config(tmp_path, "boomarr.yml")
+        assert config.output_path == Path("/media/filtered").resolve()
+
+    def test_global_output_path_allows_libraries_without_output(
+        self, tmp_path: Path
+    ) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "output_path": "/media/filtered",
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        config = load_config(tmp_path, "boomarr.yml")
+        assert len(config.libraries) == 1
+        assert config.libraries[0].output_path is None
+
+    def test_no_global_no_library_output_rejected(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        with pytest.raises(SystemExit):
+            load_config(tmp_path, "boomarr.yml")
+
+    def test_per_library_output_without_global_ok(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "output_path": "/filtered/movies",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        config = load_config(tmp_path, "boomarr.yml")
+        assert config.output_path is None
+        assert config.libraries[0].output_path is not None
+
+    def test_mixed_global_and_per_library_ok(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "output_path": "/media/filtered",
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "output_path": "/custom/movies",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+                {
+                    "name": "Shows",
+                    "input_path": "/media/shows",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        config = load_config(tmp_path, "boomarr.yml")
+        assert config.libraries[0].output_path is not None
+        assert config.libraries[1].output_path is None

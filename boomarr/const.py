@@ -93,6 +93,7 @@ CONF_LIBRARIES = "libraries"
 CONF_LIBRARY_NAME = "name"
 CONF_LIBRARY_INPUT_PATH = "input_path"
 CONF_LIBRARY_OUTPUT_PATH = "output_path"
+CONF_OUTPUT_PATH = "output_path"
 
 DEFAULT_PROBERS: list[ProberType] = [ProberType.FFPROBE]
 DEFAULT_PRE_PROBE_FILTERS: list[PreProbeFilterType] = [

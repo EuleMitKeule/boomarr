@@ -13,7 +13,7 @@ from typing import Any, ClassVar, Literal
 
 import typer
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from boomarr.const import (
     APP_NAME,
@@ -28,6 +28,7 @@ from boomarr.const import (
     CONF_LOGGING_DIR,
     CONF_LOGGING_FILE_NAME,
     CONF_LOGGING_LEVEL,
+    CONF_OUTPUT_PATH,
     DEFAULT_LOG_COLOR,
     DEFAULT_LOG_DATE_FORMAT,
     DEFAULT_LOG_DIR,
@@ -275,7 +276,7 @@ class LibraryConfig(BaseModel):
 
     name: str
     input_path: Path
-    output_path: Path
+    output_path: Path | None = None
     probers: list[AnyProberConfig] | None = None
     pre_probe_filters: list[AnyPreProbeFilterConfig] | None = None
     symlink_libraries: list[SymlinkLibraryConfig]
@@ -292,10 +293,17 @@ class LibraryConfig(BaseModel):
             raise ValueError("Library name must not be empty")
         return v.strip()
 
-    @field_validator(CONF_LIBRARY_INPUT_PATH, CONF_LIBRARY_OUTPUT_PATH, mode="after")
+    @field_validator(CONF_LIBRARY_INPUT_PATH, mode="after")
     @classmethod
-    def _resolve_paths(cls, v: Path) -> Path:
+    def _resolve_input_path(cls, v: Path) -> Path:
         return v.resolve()
+
+    @field_validator(CONF_LIBRARY_OUTPUT_PATH, mode="after")
+    @classmethod
+    def _resolve_output_path(cls, v: Path | None) -> Path | None:
+        if v is not None:
+            return v.resolve()
+        return v
 
     @field_validator("symlink_libraries", mode="after")
     @classmethod
@@ -335,6 +343,7 @@ class Config(BaseModel):
     config_file: str
     general: GeneralConfig
     logging: LoggingConfig
+    output_path: Path | None = None
     probers: list[AnyProberConfig] = Field(
         default_factory=lambda: [_prober_config_from_name(n) for n in DEFAULT_PROBERS],
     )
@@ -356,6 +365,13 @@ class Config(BaseModel):
         """Convert config directory path to absolute."""
         return v.resolve()
 
+    @field_validator(CONF_OUTPUT_PATH, mode="after")
+    @classmethod
+    def _resolve_output_path(cls, v: Path | None) -> Path | None:
+        if v is not None:
+            return v.resolve()
+        return v
+
     @field_validator("probers", mode="after")
     @classmethod
     def _validate_probers_not_empty(
@@ -375,6 +391,22 @@ class Config(BaseModel):
             dupes = [n for n in names if names.count(n) > 1]
             raise ValueError(f"Duplicate library names: {set(dupes)}")
         return v
+
+    @model_validator(mode="after")
+    def _validate_output_paths(self) -> "Config":
+        """Ensure every library can resolve an output path.
+
+        Either the global ``output_path`` is set, or each library provides
+        its own ``output_path``, or a combination of both.
+        """
+        if self.output_path is None:
+            missing = [lib.name for lib in self.libraries if lib.output_path is None]
+            if missing:
+                raise ValueError(
+                    f"Global output_path is not set and these libraries "
+                    f"are missing output_path: {missing}"
+                )
+        return self
 
 
 _config: Config | None = None
@@ -521,6 +553,9 @@ def load_config(
     pre_probe_raw = yaml_data.get("pre_probe_filters")
     if pre_probe_raw is not None:
         extra_fields["pre_probe_filters"] = pre_probe_raw
+    output_path_raw = yaml_data.get("output_path")
+    if output_path_raw is not None:
+        extra_fields["output_path"] = output_path_raw
 
     try:
         _config = Config(

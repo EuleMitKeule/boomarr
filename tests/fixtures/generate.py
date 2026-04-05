@@ -31,24 +31,45 @@ _BITRATE = "8k"
 # (path relative to MEDIA_DIR, list of ISO 639-2 language codes)
 # Empty list → no audio tracks (video-only MKV).
 _MEDIA_SPECS: list[tuple[str, list[str]]] = [
+    # --- Movies: root-level files ---
     ("movies/Sample.Movie.DE.mkv", ["deu"]),
     ("movies/Sample.Movie.EN.mkv", ["eng"]),
     ("movies/Sample.Movie.DE.EN.mkv", ["deu", "eng"]),
     ("movies/Sample.Movie.DE.EN.FR.mkv", ["deu", "eng", "fra"]),
     ("movies/Sample.Movie.NoAudio.mkv", []),
-    ("shows/Sample.Show/S01E01.DE.mkv", ["deu"]),
-    ("shows/Sample.Show/S01E02.EN.mkv", ["eng"]),
-    ("shows/Sample.Show/S01E03.DE.EN.mkv", ["deu", "eng"]),
+    # --- Movies: subfolder with sidecar files ---
+    ("movies/Movie.In.Folder/Movie.In.Folder.DE.EN.mkv", ["deu", "eng"]),
+    # --- Movies: nested two levels deep ---
+    ("movies/Collection/Sequel/Sequel.Movie.DE.mkv", ["deu"]),
+    # --- Shows: multi-season with mixed languages ---
+    ("shows/Sample.Show/Season 1/S01E01.DE.mkv", ["deu"]),
+    ("shows/Sample.Show/Season 1/S01E02.EN.mkv", ["eng"]),
+    ("shows/Sample.Show/Season 1/S01E03.DE.EN.mkv", ["deu", "eng"]),
+    ("shows/Sample.Show/Season 2/S02E01.DE.EN.mkv", ["deu", "eng"]),
+    ("shows/Sample.Show/Season 2/S02E02.EN.mkv", ["eng"]),
+    ("shows/Sample.Show/Season 2/S02E03.DE.mkv", ["deu"]),
+    # --- Shows: second show ---
+    ("shows/Another.Show/Season 1/S01E01.DE.EN.FR.mkv", ["deu", "eng", "fra"]),
 ]
 
 # (path relative to MEDIA_DIR, text content)
+# Non-media sidecar/ancillary files placed alongside media files.
 _NON_MEDIA_SPECS: list[tuple[str, str]] = [
+    # Standalone non-media directory (for pre-probe filter tests)
     ("non_media/poster.jpg", "stub:not-a-real-image\n"),
     ("non_media/info.nfo", "<nfo><title>Sample</title></nfo>\n"),
     (
         "non_media/subtitle.en.srt",
         "1\n00:00:00,000 --> 00:00:01,000\nSample subtitle\n",
     ),
+    # Sidecar files inside movie subfolders
+    ("movies/Movie.In.Folder/poster.jpg", "stub:not-a-real-image\n"),
+    ("movies/Movie.In.Folder/movie.nfo", "<nfo><title>Movie In Folder</title></nfo>\n"),
+    ("movies/Collection/Sequel/Sequel.Movie.DE.srt", "1\n00:00:00,000 --> 00:00:01,000\nSequel subtitle\n"),
+    # Sidecar files inside show season folders
+    ("shows/Sample.Show/Season 1/banner.jpg", "stub:not-a-real-image\n"),
+    ("shows/Sample.Show/Season 2/show.nfo", "<nfo><title>Sample Show</title></nfo>\n"),
+    ("shows/Another.Show/Season 1/poster.jpg", "stub:not-a-real-image\n"),
 ]
 
 

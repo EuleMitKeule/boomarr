@@ -6,7 +6,6 @@ and resolving link targets.
 """
 
 import logging
-import os
 from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
@@ -18,21 +17,17 @@ class SymlinkManager:
     def ensure_link(self, source: Path, dest: Path) -> bool:
         """Ensure a symlink at ``dest`` pointing to ``source`` exists.
 
-        Creates parent directories as needed. Uses relative symlink targets
-        for portability across mount points.
+        Creates parent directories as needed. Uses absolute symlink targets.
 
         Returns True if a new link was created, False if it already existed
         and was correct.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
 
-        target = os.path.relpath(source, dest.parent)
-
         if dest.is_symlink():
-            existing = os.readlink(dest)
-            if existing == target:
+            if dest.resolve() == source.resolve():
                 return False
-            _LOGGER.debug("Updating symlink '%s' -> '%s'", dest, target)
+            _LOGGER.debug("Updating symlink '%s' -> '%s'", dest, source)
             dest.unlink()
         elif dest.exists():
             _LOGGER.warning(
@@ -40,8 +35,8 @@ class SymlinkManager:
             )
             return False
 
-        dest.symlink_to(target)
-        _LOGGER.debug("Created symlink '%s' -> '%s'", dest, target)
+        dest.symlink_to(source)
+        _LOGGER.debug("Created symlink '%s' -> '%s'", dest, source)
         return True
 
     def remove_link(self, dest: Path) -> bool:

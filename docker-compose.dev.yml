@@ -10,7 +10,8 @@ services:
       LOG_LEVEL: debug
     volumes:
       - ./config-docker:/config
-      - ./config-docker/output:/media/output:rw
+      - ./config-docker/output/filtered/movies:/media/filtered/movies:rw
+      - ./config-docker/output/filtered/shows:/media/filtered/shows:rw
       - ./tests/fixtures/media/movies:/media/movies:ro
       - ./tests/fixtures/media/shows:/media/shows:ro
     command: boomarr watch

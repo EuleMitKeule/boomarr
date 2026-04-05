@@ -260,6 +260,48 @@ def clean(
     _LOGGER.info("Clean complete: %d stale symlinks removed", total_removed)
 
 
+@app.command("paths", help="Print all writable paths from config, one per line.")
+def paths(
+    config_dir: ConfigDirOpt = DEFAULT_CONFIG_DIR,
+    config_file_name: ConfigFileNameOpt = DEFAULT_CONFIG_FILE_NAME,
+    log_dir: LogDirOpt = None,
+    log_file_name: LogFileNameOpt = None,
+) -> None:
+    """Print all writable paths from config, one per line.
+
+    Outputs the resolved log directory and all symlink library output paths.
+    Each path appears exactly once (duplicates are suppressed).
+    Suitable for use in the Docker entrypoint to chown writable mounts.
+    """
+    config = load_config(
+        config_dir, config_file_name, log_dir=log_dir, log_file_name=log_file_name
+    )
+
+    seen: set[Path] = set()
+
+    def _emit(p: Path | None) -> None:
+        if p is not None and p not in seen:
+            seen.add(p)
+            typer.echo(p)
+
+    _emit(
+        config.logging.log_file.parent
+        if config.logging.log_file
+        else config.logging.dir
+    )
+
+    for library in config.libraries:
+        base_output: Path | None = (
+            library.output_path
+            if library.output_path is not None
+            else config.output_path
+        )
+        _emit(base_output)
+        for sym_lib in library.symlink_libraries:
+            if sym_lib.output_path is not None:
+                _emit(sym_lib.output_path)
+
+
 @app.command("status", help="Show cache stats and last run info.")
 def status(
     config_dir: ConfigDirOpt = DEFAULT_CONFIG_DIR,

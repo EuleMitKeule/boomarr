@@ -278,7 +278,8 @@ class TestPipelineFactory:
         )
         factory = PipelineFactory()
         pipeline = factory.for_scan(config, library)
-        expected = Path(f"{library.output_path}-de")
+        assert library.output_path is not None
+        expected = library.output_path / "t-de"
         assert pipeline.symlink_libraries[0].output_path == expected
 
     def test_for_scan_named_output_path(self) -> None:
@@ -298,7 +299,8 @@ class TestPipelineFactory:
         )
         factory = PipelineFactory()
         pipeline = factory.for_scan(config, library)
-        expected = library.output_path.parent / "german"
+        assert library.output_path is not None
+        expected = library.output_path / "german"
         assert pipeline.symlink_libraries[0].output_path == expected
 
     def test_for_clean_has_no_pre_probe_filters(self) -> None:
@@ -993,3 +995,56 @@ class TestPipelineFactoryExtended:
             pipeline.symlink_libraries[0].output_path
             == Path("/custom/output").resolve()
         )
+
+    def test_global_output_path_auto_naming(self) -> None:
+        """With global output_path and no library output_path, dir name includes library slug."""
+        config = Config(
+            config_dir=Path("."),
+            config_file="test.yml",
+            general=GeneralConfig(),
+            logging=LoggingConfig(),
+            output_path=Path("/filtered"),
+            libraries=[],
+        )
+        library = LibraryConfig(
+            name="Dev Movies",
+            input_path=Path("/a"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
+        factory = PipelineFactory()
+        pipeline = factory.for_scan(config, library)
+        expected = Path("/filtered").resolve() / "dev-movies-de"
+        assert pipeline.symlink_libraries[0].output_path == expected
+
+    def test_library_output_overrides_global(self) -> None:
+        """Per-library output_path takes precedence over global."""
+        config = Config(
+            config_dir=Path("."),
+            config_file="test.yml",
+            general=GeneralConfig(),
+            logging=LoggingConfig(),
+            output_path=Path("/global"),
+            libraries=[],
+        )
+        library = LibraryConfig(
+            name="Movies",
+            input_path=Path("/a"),
+            output_path=Path("/per-library"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
+        factory = PipelineFactory()
+        pipeline = factory.for_scan(config, library)
+        expected = Path("/per-library").resolve() / "movies-de"
+        assert pipeline.symlink_libraries[0].output_path == expected

@@ -15,15 +15,9 @@ umask "$UMASK"
 mkdir -p "$CONFIG_DIR"
 chown -R boomarr:boomarr /app "$CONFIG_DIR"
 
-case "$LOG_DIR" in
-  "$CONFIG_DIR"/*)
-    mkdir -p "$LOG_DIR"
-    chown boomarr:boomarr "$LOG_DIR"
-    ;;
-  *)
-    mkdir -p "$LOG_DIR"
-    chown boomarr:boomarr "$LOG_DIR"
-    ;;
-esac
+boomarr paths --config-dir "$CONFIG_DIR" 2>/dev/null | while IFS= read -r dir; do
+    mkdir -p "$dir"
+    chown -R boomarr:boomarr "$dir"
+done
 
 exec gosu boomarr "$@"
