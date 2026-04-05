@@ -9,7 +9,7 @@ import sys
 import zoneinfo
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import typer
 import yaml
@@ -22,7 +22,6 @@ from boomarr.const import (
     CONF_GENERAL_UMASK,
     CONF_LIBRARIES,
     CONF_LIBRARY_INPUT_PATH,
-    CONF_LIBRARY_LANGUAGES,
     CONF_LIBRARY_NAME,
     CONF_LIBRARY_OUTPUT_PATH,
     CONF_LOGGING,
@@ -40,6 +39,8 @@ from boomarr.const import (
     DEFAULT_LOG_ROTATION_MAX_BYTES,
     DEFAULT_LOG_ROTATION_ROTATE_ON_START,
     DEFAULT_PGID,
+    DEFAULT_PRE_PROBE_FILTERS,
+    DEFAULT_PROBERS,
     DEFAULT_PUID,
     DEFAULT_TZ,
     DEFAULT_UMASK,
@@ -47,7 +48,16 @@ from boomarr.const import (
     ENV_PREFIX_LOG_ROTATION,
     ENV_PREFIX_LOGGING,
     LogLevel,
+    PostProbeFilterType,
+    PreProbeFilterType,
+    ProberType,
 )
+
+__all__ = [
+    "PostProbeFilterType",
+    "PreProbeFilterType",
+    "ProberType",
+]
 
 _LOGGER = logging.getLogger(APP_NAME)
 
@@ -166,13 +176,114 @@ class LoggingConfig(BaseModel):
         return v
 
 
+def _coerce_typed_list(v: object) -> object:
+    """Coerce plain string items in a list to ``{'type': item}`` dicts.
+
+    Allows YAML entries like ``- ffprobe`` in addition to
+    ``- type: ffprobe`` for configs without required arguments.
+    StrEnum members are also strings, so they are handled by the same branch.
+    """
+    if isinstance(v, list):
+        return [{"type": item} if isinstance(item, str) else item for item in v]
+    return v
+
+
+class ProberConfig(BaseModel):
+    """Base class for prober configurations."""
+
+    type: ProberType
+
+
+class FFProbeProberConfig(ProberConfig):
+    """Configuration for the FFProbe prober."""
+
+    type: Literal[ProberType.FFPROBE] = ProberType.FFPROBE
+
+
+AnyProberConfig = FFProbeProberConfig
+
+
+class PreProbeFilterConfig(BaseModel):
+    """Base class for pre-probe filter configurations."""
+
+    type: PreProbeFilterType
+
+
+class FileExtensionFilterConfig(PreProbeFilterConfig):
+    """Configuration for the file-extension pre-probe filter."""
+
+    type: Literal[PreProbeFilterType.FILE_EXTENSION] = PreProbeFilterType.FILE_EXTENSION
+    extensions: list[str] | None = None
+
+
+AnyPreProbeFilterConfig = FileExtensionFilterConfig
+
+
+class PostProbeFilterConfig(BaseModel):
+    """Base class for post-probe filter configurations."""
+
+    type: PostProbeFilterType
+    suffix: str | None = None
+
+
+class AudioLanguageFilterConfig(PostProbeFilterConfig):
+    """Configuration for the audio-language post-probe filter."""
+
+    type: Literal[PostProbeFilterType.AUDIO_LANGUAGE] = (
+        PostProbeFilterType.AUDIO_LANGUAGE
+    )
+    languages: list[str]
+
+    @field_validator("languages", mode="after")
+    @classmethod
+    def _validate_languages_not_empty(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("at least one language is required")
+        return v
+
+
+AnyPostProbeFilterConfig = AudioLanguageFilterConfig
+
+
+class SymlinkLibraryConfig(BaseModel):
+    """Configuration for a single symlink library output."""
+
+    name: str | None = None
+    filters: list[AnyPostProbeFilterConfig]
+    output_path: Path | None = None
+
+    @field_validator("filters", mode="after")
+    @classmethod
+    def _validate_filters_not_empty(
+        cls,
+        v: list[AnyPostProbeFilterConfig],
+    ) -> list[AnyPostProbeFilterConfig]:
+        if not v:
+            raise ValueError("Symlink library must have at least one filter")
+        return v
+
+    @field_validator("output_path", mode="after")
+    @classmethod
+    def _resolve_output_path(cls, v: Path | None) -> Path | None:
+        if v is not None:
+            return v.resolve()
+        return v
+
+
 class LibraryConfig(BaseModel):
     """Per-library configuration."""
 
     name: str
     input_path: Path
     output_path: Path
-    languages: list[str]
+    probers: list[AnyProberConfig] | None = None
+    pre_probe_filters: list[AnyPreProbeFilterConfig] | None = None
+    symlink_libraries: list[SymlinkLibraryConfig]
+
+    @field_validator("probers", "pre_probe_filters", mode="before")
+    @classmethod
+    def _coerce_to_typed_dicts(cls, v: object) -> object:
+        return _coerce_typed_list(v)
 
     @field_validator(CONF_LIBRARY_NAME, mode="after")
     @classmethod
@@ -181,17 +292,40 @@ class LibraryConfig(BaseModel):
             raise ValueError("Library name must not be empty")
         return v.strip()
 
-    @field_validator(CONF_LIBRARY_LANGUAGES, mode="after")
-    @classmethod
-    def _validate_languages(cls, v: list[str]) -> list[str]:
-        if not v:
-            raise ValueError("Library must have at least one language")
-        return [lang.strip().lower() for lang in v]
-
     @field_validator(CONF_LIBRARY_INPUT_PATH, CONF_LIBRARY_OUTPUT_PATH, mode="after")
     @classmethod
     def _resolve_paths(cls, v: Path) -> Path:
         return v.resolve()
+
+    @field_validator("symlink_libraries", mode="after")
+    @classmethod
+    def _validate_symlink_libraries_not_empty(
+        cls,
+        v: list[SymlinkLibraryConfig],
+    ) -> list[SymlinkLibraryConfig]:
+        if not v:
+            raise ValueError("Library must have at least one symlink library")
+        return v
+
+
+def _prober_config_from_name(prober_type: ProberType | str) -> AnyProberConfig:
+    """Build the appropriate ProberConfig subclass from a prober type (enum or string)."""
+    match prober_type:
+        case ProberType.FFPROBE:
+            return FFProbeProberConfig()
+        case _:
+            raise ValueError(f"Unknown prober type: {prober_type!r}")
+
+
+def _pre_probe_filter_config_from_name(
+    filter_type: PreProbeFilterType | str,
+) -> AnyPreProbeFilterConfig:
+    """Build the appropriate PreProbeFilterConfig subclass from a filter type (enum or string)."""
+    match filter_type:
+        case PreProbeFilterType.FILE_EXTENSION:
+            return FileExtensionFilterConfig()
+        case _:
+            raise ValueError(f"Unknown pre-probe filter type: {filter_type!r}")
 
 
 class Config(BaseModel):
@@ -201,13 +335,35 @@ class Config(BaseModel):
     config_file: str
     general: GeneralConfig
     logging: LoggingConfig
+    probers: list[AnyProberConfig] = Field(
+        default_factory=lambda: [_prober_config_from_name(n) for n in DEFAULT_PROBERS],
+    )
+    pre_probe_filters: list[AnyPreProbeFilterConfig] = Field(
+        default_factory=lambda: [
+            _pre_probe_filter_config_from_name(n) for n in DEFAULT_PRE_PROBE_FILTERS
+        ],
+    )
     libraries: list[LibraryConfig] = Field(default_factory=list)
+
+    @field_validator("probers", "pre_probe_filters", mode="before")
+    @classmethod
+    def _coerce_to_typed_dicts(cls, v: object) -> object:
+        return _coerce_typed_list(v)
 
     @field_validator(CONF_CONFIG_DIR, mode="after")
     @classmethod
     def _resolve_config_dir_to_absolute(cls, v: Path) -> Path:
         """Convert config directory path to absolute."""
         return v.resolve()
+
+    @field_validator("probers", mode="after")
+    @classmethod
+    def _validate_probers_not_empty(
+        cls, v: list[AnyProberConfig]
+    ) -> list[AnyProberConfig]:
+        if not v:
+            raise ValueError("At least one prober is required")
+        return v
 
     @field_validator(CONF_LIBRARIES, mode="after")
     @classmethod
@@ -358,12 +514,21 @@ def load_config(
 
     libraries_raw = yaml_data.get(CONF_LIBRARIES) or []
 
+    extra_fields: dict[str, Any] = {}
+    probers_raw = yaml_data.get("probers")
+    if probers_raw is not None:
+        extra_fields["probers"] = probers_raw
+    pre_probe_raw = yaml_data.get("pre_probe_filters")
+    if pre_probe_raw is not None:
+        extra_fields["pre_probe_filters"] = pre_probe_raw
+
     try:
         _config = Config(
             config_dir=config_dir,
             config_file=config_file_name,
             libraries=libraries_raw,
             **sub_configs,
+            **extra_fields,
         )
     except ValidationError as exc:
         typer.echo(f"Error validating config file '{config_path}':", err=True)

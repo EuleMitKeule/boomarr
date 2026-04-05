@@ -34,10 +34,7 @@ class StateStore(abc.ABC):
 
 
 class InMemoryStateStore(StateStore):
-    """Simple in-memory state store for initial development.
-
-    TODO: Replace with SQLiteStateStore for real persistence.
-    """
+    """Simple in-memory state store for initial development."""
 
     def __init__(self) -> None:
         self._entries: dict[str, tuple[int, float, bool]] = {}

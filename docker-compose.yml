@@ -10,5 +10,9 @@ services:
       TZ: UTC
       LOG_LEVEL: info
     volumes:
-      - </path/to/boomarr/config>:/config
+      - /path/to/boomarr/config:/config                             # Mount the config directory
+      - /path/to/media/filtered/movies:/media/filtered/movies:rw    # Mount the output directory for movies (subfolders will be created for each symlink library)
+      - /path/to/media/filtered/shows:/media/filtered/shows:rw      # Mount the output directory for shows (subfolders will be created for each symlink library)
+      - /path/to/media/movies:/media/movies:ro                      # Mount the input directory for movies
+      - /path/to/media/shows:/media/shows:ro                        # Mount the input directory for shows
     command: boomarr watch

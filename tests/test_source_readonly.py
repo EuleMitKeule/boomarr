@@ -6,7 +6,11 @@ from unittest.mock import patch
 import pytest
 
 from boomarr.__main__ import verify_source_dirs_readonly
-from boomarr.config import LibraryConfig
+from boomarr.config import (
+    AudioLanguageFilterConfig,
+    LibraryConfig,
+    SymlinkLibraryConfig,
+)
 
 
 def _make_library(input_path: Path, output_path: Path) -> LibraryConfig:
@@ -14,7 +18,13 @@ def _make_library(input_path: Path, output_path: Path) -> LibraryConfig:
         name="Test",
         input_path=input_path,
         output_path=output_path,
-        languages=["de"],
+        symlink_libraries=[
+            SymlinkLibraryConfig(
+                filters=[
+                    AudioLanguageFilterConfig(languages=["de"]),
+                ],
+            ),
+        ],
     )
 
 

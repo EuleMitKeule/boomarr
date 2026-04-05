@@ -33,6 +33,7 @@ from boomarr.log import setup_logging
 from boomarr.models import ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
+from boomarr.state import InMemoryStateStore
 
 _LOGGER = logging.getLogger(APP_NAME)
 
@@ -181,11 +182,11 @@ def scan(
     verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
 
     factory = PipelineFactory()
-    pipeline = factory.for_scan()
-    processor = LibraryProcessor(pipeline)
     total = ScanResult()
 
     for library in config.libraries:
+        pipeline = factory.for_scan(config, library)
+        processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         total.merge(result)
 
@@ -249,11 +250,11 @@ def clean(
     verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
 
     factory = PipelineFactory()
-    pipeline = factory.for_clean()
-    processor = LibraryProcessor(pipeline)
     total_removed = 0
 
     for library in config.libraries:
+        pipeline = factory.for_clean(config, library)
+        processor = LibraryProcessor(pipeline)
         total_removed += processor.clean_library(library)
 
     _LOGGER.info("Clean complete: %d stale symlinks removed", total_removed)
@@ -275,9 +276,8 @@ def status(
     _init_config(config_dir, config_file_name, log_level, log_dir, log_file_name)
     _LOGGER.info("Showing status")
 
-    factory = PipelineFactory()
-    pipeline = factory.for_scan()
-    stats = pipeline.state.get_stats()
+    state = InMemoryStateStore()
+    stats = state.get_stats()
 
     _LOGGER.info(
         "Cache stats: %d total, %d matched, last scan: %s",

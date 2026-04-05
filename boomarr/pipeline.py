@@ -12,10 +12,22 @@ New commands or subsystem implementations are registered here.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
+from boomarr.config import (
+    Config,
+    LibraryConfig,
+    PostProbeFilterConfig,
+    PostProbeFilterType,
+    PreProbeFilterConfig,
+    PreProbeFilterType,
+    ProberConfig,
+    ProberType,
+)
 from boomarr.filters.audio_language import AudioLanguageFilter
-from boomarr.filters.base import MediaFilter
+from boomarr.filters.base import PostProbeFilter, PreProbeFilter
 from boomarr.filters.file_extension import FileExtensionFilter
 from boomarr.probers.base import MediaProber
 from boomarr.probers.ffprobe import FFProbeProber
@@ -26,18 +38,28 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class ResolvedSymlinkLibrary:
+    """A symlink library with resolved post-probe filters and output path."""
+
+    filters: list[PostProbeFilter]
+    output_path: Path
+
+
+@dataclass(frozen=True)
 class Pipeline:
     """A fully configured pipeline of subsystems for processing libraries.
 
     Attributes:
-        prober: The media prober to extract file metadata.
-        filters: Ordered list of filters; all must pass (implicit AND).
+        probers: Ordered list of probers; first successful result wins.
+        pre_probe_filters: Filters applied before probing (e.g. extension).
+        symlink_libraries: Resolved symlink library definitions with output paths.
         symlinks: The symlink manager for creating/removing links.
         state: The state store for tracking processed files.
     """
 
-    prober: MediaProber
-    filters: list[MediaFilter] = field(default_factory=list)
+    probers: list[MediaProber]
+    pre_probe_filters: list[PreProbeFilter] = field(default_factory=list)
+    symlink_libraries: list[ResolvedSymlinkLibrary] = field(default_factory=list)
     symlinks: SymlinkManager = field(default_factory=SymlinkManager)
     state: StateStore = field(default_factory=InMemoryStateStore)
 
@@ -54,63 +76,118 @@ class PipelineFactory:
     def __init__(self, *, state: StateStore | None = None) -> None:
         self._state = state or InMemoryStateStore()
 
-    def _default_prober(self) -> MediaProber:
-        """Return the default prober chain.
+    @staticmethod
+    def _build_probers(configs: Sequence[ProberConfig]) -> list[MediaProber]:
+        """Build prober instances from a list of prober configs."""
+        probers: list[MediaProber] = []
+        for config in configs:
+            match config.type:
+                case ProberType.FFPROBE:
+                    probers.append(FFProbeProber())
+                case _:
+                    raise ValueError(f"Unknown prober: {config.type!r}")
+        return probers
 
-        Currently FFprobe only.  Later this becomes a ``FallbackProber``
-        that tries Radarr/Sonarr first and falls back to FFprobe.
-        """
-        return FFProbeProber()
+    @staticmethod
+    def _build_pre_probe_filters(
+        configs: Sequence[PreProbeFilterConfig],
+    ) -> list[PreProbeFilter]:
+        """Build pre-probe filter instances from a list of filter configs."""
+        filters: list[PreProbeFilter] = []
+        for config in configs:
+            match config.type:
+                case PreProbeFilterType.FILE_EXTENSION:
+                    extensions_raw = getattr(config, "extensions", None)
+                    if extensions_raw is not None:
+                        filters.append(
+                            FileExtensionFilter(extensions=frozenset(extensions_raw))
+                        )
+                    else:
+                        filters.append(FileExtensionFilter())
+                case _:
+                    raise ValueError(f"Unknown pre-probe filter: {config.type!r}")
+        return filters
 
-    def _default_filters(self) -> list[MediaFilter]:
-        """Return the default filter chain in evaluation order.
+    @staticmethod
+    def _build_post_probe_filter(config: PostProbeFilterConfig) -> PostProbeFilter:
+        """Build a single post-probe filter instance from its config."""
+        match config.type:
+            case PostProbeFilterType.AUDIO_LANGUAGE:
+                languages = getattr(config, "languages", None)
+                if not languages:
+                    raise ValueError(
+                        "audio_language filter requires a 'languages' list"
+                    )
+                return AudioLanguageFilter(
+                    languages=languages,
+                    suffix=config.suffix,
+                )
+            case _:
+                raise ValueError(f"Unknown post-probe filter type: {config.type!r}")
 
-        1. FileExtensionFilter — fast, purely path-based, runs first to
-           skip non-media files before the expensive probe step.
-        2. AudioLanguageFilter — requires probed metadata.
+    def _resolve_symlink_libraries(
+        self,
+        library: LibraryConfig,
+    ) -> list[ResolvedSymlinkLibrary]:
+        """Resolve symlink library configs into runtime objects."""
+        resolved: list[ResolvedSymlinkLibrary] = []
+        for sym_lib in library.symlink_libraries:
+            filters = [self._build_post_probe_filter(fc) for fc in sym_lib.filters]
+            if sym_lib.output_path is not None:
+                output_path = sym_lib.output_path
+            elif sym_lib.name is not None:
+                output_path = library.output_path.parent / sym_lib.name
+            else:
+                combined_suffix = "-".join(f.suffix for f in filters)
+                output_path = Path(f"{library.output_path}-{combined_suffix}")
+            resolved.append(
+                ResolvedSymlinkLibrary(filters=filters, output_path=output_path)
+            )
+        return resolved
 
-        New filter types are added here.
-        """
-        return [
-            FileExtensionFilter(),
-            AudioLanguageFilter(),
-        ]
-
-    def for_scan(self) -> Pipeline:
+    def for_scan(self, config: Config, library: LibraryConfig) -> Pipeline:
         """Build a pipeline for the ``scan`` command.
 
-        Full pipeline: probe → filter → symlink → clean stale → persist.
+        Full pipeline: pre-filter → probe → post-filter → symlink → clean stale → persist.
         """
-        _LOGGER.debug("Building pipeline for 'scan'")
+        _LOGGER.debug("Building pipeline for 'scan' on library '%s'", library.name)
+        prober_configs = (
+            library.probers if library.probers is not None else config.probers
+        )
+        pre_filter_configs = (
+            library.pre_probe_filters
+            if library.pre_probe_filters is not None
+            else config.pre_probe_filters
+        )
         return Pipeline(
-            prober=self._default_prober(),
-            filters=self._default_filters(),
+            probers=self._build_probers(prober_configs),
+            pre_probe_filters=self._build_pre_probe_filters(pre_filter_configs),
+            symlink_libraries=self._resolve_symlink_libraries(library),
             symlinks=SymlinkManager(),
             state=self._state,
         )
 
-    def for_watch(self) -> Pipeline:
+    def for_watch(self, config: Config, library: LibraryConfig) -> Pipeline:
         """Build a pipeline for the ``watch`` command.
 
         Same as scan but will be used incrementally on filesystem events.
         """
-        _LOGGER.debug("Building pipeline for 'watch'")
-        return Pipeline(
-            prober=self._default_prober(),
-            filters=self._default_filters(),
-            symlinks=SymlinkManager(),
-            state=self._state,
-        )
+        _LOGGER.debug("Building pipeline for 'watch' on library '%s'", library.name)
+        return self.for_scan(config, library)
 
-    def for_clean(self) -> Pipeline:
+    def for_clean(self, config: Config, library: LibraryConfig) -> Pipeline:
         """Build a pipeline for the ``clean`` command.
 
-        Only needs the symlink manager — no probing or filtering.
+        Only needs the symlink manager and output paths — no probing or filtering.
         """
-        _LOGGER.debug("Building pipeline for 'clean'")
+        _LOGGER.debug("Building pipeline for 'clean' on library '%s'", library.name)
+        prober_configs = (
+            library.probers if library.probers is not None else config.probers
+        )
         return Pipeline(
-            prober=self._default_prober(),
-            filters=[],
+            probers=self._build_probers(prober_configs),
+            pre_probe_filters=[],
+            symlink_libraries=self._resolve_symlink_libraries(library),
             symlinks=SymlinkManager(),
             state=self._state,
         )

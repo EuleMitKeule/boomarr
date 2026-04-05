@@ -632,6 +632,85 @@ class TestLoadConfigGeneral:
 
 
 # ---------------------------------------------------------------------------
+# _coerce_typed_list
+# ---------------------------------------------------------------------------
+
+
+class TestCoerceTypedList:
+    """Tests for the _coerce_typed_list helper in config.py."""
+
+    def test_non_list_value_returned_unchanged(self) -> None:
+        """Non-list values should be passed through as-is (line 188)."""
+        from boomarr.config import _coerce_typed_list
+
+        value = {"type": "ffprobe"}
+        assert _coerce_typed_list(value) is value
+
+    def test_none_returned_unchanged(self) -> None:
+        from boomarr.config import _coerce_typed_list
+
+        assert _coerce_typed_list(None) is None
+
+    def test_list_of_strings_coerced(self) -> None:
+        from boomarr.config import _coerce_typed_list
+
+        result = _coerce_typed_list(["ffprobe"])
+        assert result == [{"type": "ffprobe"}]
+
+    def test_list_of_dicts_unchanged(self) -> None:
+        from boomarr.config import _coerce_typed_list
+
+        item = {"type": "ffprobe"}
+        result = _coerce_typed_list([item])
+        assert result == [item]
+
+
+# ---------------------------------------------------------------------------
+# _prober_config_from_name / _pre_probe_filter_config_from_name
+# ---------------------------------------------------------------------------
+
+
+class TestConfigHelperFunctions:
+    """Tests for the private config helper functions."""
+
+    def test_unknown_prober_type_raises(self) -> None:
+        """Fallthrough case in _prober_config_from_name raises ValueError (lines 316-317)."""
+        from boomarr.config import _prober_config_from_name
+
+        with pytest.raises(ValueError, match="Unknown prober type"):
+            _prober_config_from_name("totally_unknown")
+
+    def test_unknown_pre_probe_filter_type_raises(self) -> None:
+        """Fallthrough case in _pre_probe_filter_config_from_name raises ValueError (lines 327-328)."""
+        from boomarr.config import _pre_probe_filter_config_from_name
+
+        with pytest.raises(ValueError, match="Unknown pre-probe filter type"):
+            _pre_probe_filter_config_from_name("totally_unknown")
+
+
+# ---------------------------------------------------------------------------
+# Config – probers validation
+# ---------------------------------------------------------------------------
+
+
+class TestConfigProbersValidation:
+    """Tests for the Config-level probers field_validator."""
+
+    def test_empty_probers_raises(self) -> None:
+        """An empty probers list should be rejected by the validator (line 365)."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="At least one prober"):
+            Config(
+                config_dir=Path("."),
+                config_file="test.yml",
+                general=GeneralConfig(),
+                logging=LoggingConfig(),
+                probers=[],
+            )
+
+
+# ---------------------------------------------------------------------------
 # load_config – log rotation config
 # ---------------------------------------------------------------------------
 

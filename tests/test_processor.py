@@ -5,12 +5,23 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
-from boomarr.config import LibraryConfig
+from boomarr.config import (
+    AudioLanguageFilterConfig,
+    Config,
+    GeneralConfig,
+    LibraryConfig,
+    LoggingConfig,
+    PostProbeFilterConfig,
+    PreProbeFilterConfig,
+    ProberConfig,
+    SymlinkLibraryConfig,
+)
 from boomarr.filters.audio_language import AudioLanguageFilter
 from boomarr.filters.file_extension import FileExtensionFilter
 from boomarr.models import AudioTrack, MediaInfo, ScanResult
-from boomarr.pipeline import Pipeline, PipelineFactory
+from boomarr.pipeline import Pipeline, PipelineFactory, ResolvedSymlinkLibrary
 from boomarr.probers.base import MediaProber
 from boomarr.processor import LibraryProcessor
 from boomarr.state import InMemoryStateStore
@@ -36,66 +47,96 @@ def _make_library(tmp_path: Path) -> LibraryConfig:
         name="Test",
         input_path=input_dir,
         output_path=output_dir,
-        languages=["de"],
+        symlink_libraries=[
+            SymlinkLibraryConfig(
+                filters=[
+                    AudioLanguageFilterConfig(languages=["de"]),
+                ],
+            ),
+        ],
+    )
+
+
+def _make_config() -> Config:
+    return Config(
+        config_dir=Path("."),
+        config_file="test.yml",
+        general=GeneralConfig(),
+        logging=LoggingConfig(),
+    )
+
+
+def _resolved_sym_lib(
+    output_path: Path,
+    languages: list[str] | None = None,
+) -> ResolvedSymlinkLibrary:
+    """Build a ResolvedSymlinkLibrary for testing."""
+    langs = languages or ["de"]
+    return ResolvedSymlinkLibrary(
+        filters=[AudioLanguageFilter(languages=langs)],
+        output_path=output_path,
     )
 
 
 class TestFileExtensionFilter:
     def test_mkv_passes(self) -> None:
         f = FileExtensionFilter()
-        info = MediaInfo(file_path=Path("/media/movie.mkv"))
-        lib = LibraryConfig(
-            name="T", input_path=Path("/a"), output_path=Path("/b"), languages=["en"]
-        )
-        assert f.matches(info, lib) is True
+        assert f.matches(Path("/media/movie.mkv")) is True
 
     def test_txt_rejected(self) -> None:
         f = FileExtensionFilter()
-        info = MediaInfo(file_path=Path("/media/readme.txt"))
-        lib = LibraryConfig(
-            name="T", input_path=Path("/a"), output_path=Path("/b"), languages=["en"]
-        )
-        assert f.matches(info, lib) is False
+        assert f.matches(Path("/media/readme.txt")) is False
 
     def test_custom_extensions(self) -> None:
         f = FileExtensionFilter(extensions=frozenset({".custom"}))
-        info = MediaInfo(file_path=Path("/media/file.custom"))
-        lib = LibraryConfig(
-            name="T", input_path=Path("/a"), output_path=Path("/b"), languages=["en"]
+        assert f.matches(Path("/media/file.custom")) is True
+
+    def test_is_media_file_true(self) -> None:
+        assert FileExtensionFilter.is_media_file(Path("/m.mkv")) is True
+
+    def test_is_media_file_false(self) -> None:
+        assert FileExtensionFilter.is_media_file(Path("/m.txt")) is False
+
+    def test_is_media_file_custom_extensions(self) -> None:
+        assert (
+            FileExtensionFilter.is_media_file(Path("/m.custom"), frozenset({".custom"}))
+            is True
         )
-        assert f.matches(info, lib) is True
 
 
 class TestAudioLanguageFilter:
     def test_matching_language(self) -> None:
-        f = AudioLanguageFilter()
+        f = AudioLanguageFilter(languages=["de"])
         info = MediaInfo(
             file_path=Path("/m.mkv"),
             audio_tracks=[AudioTrack(index=0, language="de", codec="aac")],
         )
-        lib = LibraryConfig(
-            name="T", input_path=Path("/a"), output_path=Path("/b"), languages=["de"]
-        )
-        assert f.matches(info, lib) is True
+        assert f.matches(info) is True
 
     def test_no_matching_language(self) -> None:
-        f = AudioLanguageFilter()
+        f = AudioLanguageFilter(languages=["de"])
         info = MediaInfo(
             file_path=Path("/m.mkv"),
             audio_tracks=[AudioTrack(index=0, language="en", codec="aac")],
         )
-        lib = LibraryConfig(
-            name="T", input_path=Path("/a"), output_path=Path("/b"), languages=["de"]
-        )
-        assert f.matches(info, lib) is False
+        assert f.matches(info) is False
 
     def test_no_tracks_rejected(self) -> None:
-        f = AudioLanguageFilter()
+        f = AudioLanguageFilter(languages=["de"])
         info = MediaInfo(file_path=Path("/m.mkv"), audio_tracks=[])
-        lib = LibraryConfig(
-            name="T", input_path=Path("/a"), output_path=Path("/b"), languages=["de"]
-        )
-        assert f.matches(info, lib) is False
+        assert f.matches(info) is False
+
+    def test_default_suffix(self) -> None:
+        f = AudioLanguageFilter(languages=["de", "en"])
+        assert f.default_suffix() == "de-en"
+
+    def test_custom_suffix(self) -> None:
+        f = AudioLanguageFilter(languages=["de"], suffix="german")
+        assert f.suffix == "german"
+
+    def test_suffix_falls_back_to_default(self) -> None:
+        f = AudioLanguageFilter(languages=["de"])
+        assert f.suffix == "de"
 
 
 class TestScanResult:
@@ -135,6 +176,18 @@ class TestInMemoryStateStore:
         assert stats["total_tracked"] == 2
         assert stats["matched"] == 1
 
+    def test_remove_clears_entry(self) -> None:
+        """remove() should delete a tracked entry (line 53)."""
+        store = InMemoryStateStore()
+        store.update(Path("/a.mkv"), 100, 1.0, matched=True)
+        store.remove(Path("/a.mkv"))
+        assert store.is_unchanged(Path("/a.mkv"), 100, 1.0) is False
+
+    def test_remove_nonexistent_is_noop(self) -> None:
+        """remove() on an unknown path should not raise."""
+        store = InMemoryStateStore()
+        store.remove(Path("/never_added.mkv"))  # must not raise
+
 
 _skip_no_symlink = pytest.mark.skipif(
     sys.platform == "win32",
@@ -171,25 +224,180 @@ class TestSymlinkManager:
 
 
 class TestPipelineFactory:
-    def test_for_scan_has_filters(self) -> None:
+    def test_for_scan_has_pre_probe_filters(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
         factory = PipelineFactory()
-        pipeline = factory.for_scan()
-        assert len(pipeline.filters) == 2
-        assert isinstance(pipeline.filters[0], FileExtensionFilter)
-        assert isinstance(pipeline.filters[1], AudioLanguageFilter)
+        pipeline = factory.for_scan(config, library)
+        assert len(pipeline.pre_probe_filters) == 1
+        assert isinstance(pipeline.pre_probe_filters[0], FileExtensionFilter)
 
-    def test_for_clean_has_no_filters(self) -> None:
+    def test_for_scan_resolves_symlink_libraries(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
         factory = PipelineFactory()
-        pipeline = factory.for_clean()
-        assert len(pipeline.filters) == 0
+        pipeline = factory.for_scan(config, library)
+        assert len(pipeline.symlink_libraries) == 1
+        assert isinstance(pipeline.symlink_libraries[0].filters[0], AudioLanguageFilter)
+
+    def test_for_scan_auto_output_path(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
+        factory = PipelineFactory()
+        pipeline = factory.for_scan(config, library)
+        expected = Path(f"{library.output_path}-de")
+        assert pipeline.symlink_libraries[0].output_path == expected
+
+    def test_for_scan_named_output_path(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    name="german",
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
+        factory = PipelineFactory()
+        pipeline = factory.for_scan(config, library)
+        expected = library.output_path.parent / "german"
+        assert pipeline.symlink_libraries[0].output_path == expected
+
+    def test_for_clean_has_no_pre_probe_filters(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
+        factory = PipelineFactory()
+        pipeline = factory.for_clean(config, library)
+        assert len(pipeline.pre_probe_filters) == 0
+
+    def test_library_prober_override(self) -> None:
+        from boomarr.config import FFProbeProberConfig
+
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            probers=[FFProbeProberConfig()],
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
+        factory = PipelineFactory()
+        pipeline = factory.for_scan(config, library)
+        assert len(pipeline.probers) == 1
+
+    def test_library_pre_probe_filter_override_empty(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            pre_probe_filters=[],
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
+        factory = PipelineFactory()
+        pipeline = factory.for_scan(config, library)
+        assert len(pipeline.pre_probe_filters) == 0
+
+    def test_build_probers_unknown_type_raises(self) -> None:
+        """Unknown prober type falls through to raise ValueError (lines 87-88)."""
+        mock_config = MagicMock()
+        mock_config.type = "totally_unknown_prober"
+        with pytest.raises(ValueError, match="Unknown prober"):
+            PipelineFactory._build_probers([mock_config])
+
+    def test_build_pre_probe_filters_custom_extensions(self) -> None:
+        """FileExtensionFilterConfig with explicit extensions list (line 102)."""
+        from boomarr.config import FileExtensionFilterConfig
+
+        config = FileExtensionFilterConfig(extensions=[".mkv", ".mp4"])
+        filters = PipelineFactory._build_pre_probe_filters([config])
+        assert len(filters) == 1
+        assert isinstance(filters[0], FileExtensionFilter)
+
+    def test_build_pre_probe_filters_unknown_type_raises(self) -> None:
+        """Unknown pre-probe filter type falls through to raise ValueError (lines 107-108)."""
+        mock_config = MagicMock()
+        mock_config.type = "totally_unknown_filter"
+        with pytest.raises(ValueError, match="Unknown pre-probe filter"):
+            PipelineFactory._build_pre_probe_filters([mock_config])
+
+    def test_build_post_probe_filter_unknown_type_raises(self) -> None:
+        """Unknown post-probe filter type falls through to raise ValueError (lines 125-126)."""
+        mock_config = MagicMock()
+        mock_config.type = "totally_unknown_post_filter"
+        with pytest.raises(ValueError, match="Unknown post-probe filter type"):
+            PipelineFactory._build_post_probe_filter(mock_config)
 
 
 class TestLibraryProcessor:
     def test_process_empty_input(self, tmp_path: Path) -> None:
         library = _make_library(tmp_path)
+        output_de = Path(f"{library.output_path}-de")
         pipeline = Pipeline(
-            prober=StubProber({}),
-            filters=[],
+            probers=[StubProber({})],
+            pre_probe_filters=[],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=SymlinkManager(),
             state=InMemoryStateStore(),
         )
@@ -200,7 +408,7 @@ class TestLibraryProcessor:
     @_skip_no_symlink
     def test_process_creates_symlink(self, tmp_path: Path) -> None:
         library = _make_library(tmp_path)
-        # Create a test media file
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -215,19 +423,20 @@ class TestLibraryProcessor:
             }
         )
         pipeline = Pipeline(
-            prober=prober,
-            filters=[AudioLanguageFilter()],
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=SymlinkManager(),
             state=InMemoryStateStore(),
         )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         assert result.created == 1
-        assert (library.output_path / "movie.mkv").is_symlink()
+        assert (output_de / "movie.mkv").is_symlink()
 
     @_skip_no_symlink
     def test_process_skips_non_matching(self, tmp_path: Path) -> None:
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -242,15 +451,15 @@ class TestLibraryProcessor:
             }
         )
         pipeline = Pipeline(
-            prober=prober,
-            filters=[AudioLanguageFilter()],
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=SymlinkManager(),
             state=InMemoryStateStore(),
         )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         assert result.created == 0
-        assert not (library.output_path / "movie.mkv").exists()
+        assert not (output_de / "movie.mkv").exists()
 
 
 class TestLibraryProcessorOrchestration:
@@ -262,9 +471,19 @@ class TestLibraryProcessorOrchestration:
             name="Ghost",
             input_path=tmp_path / "nonexistent",
             output_path=tmp_path / "output",
-            languages=["de"],
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
         )
-        pipeline = Pipeline(prober=StubProber({}))
+        output_de = tmp_path / "output-de"
+        pipeline = Pipeline(
+            probers=[StubProber({})],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
+        )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         assert result.total == 0
@@ -272,11 +491,15 @@ class TestLibraryProcessorOrchestration:
     def test_probe_returns_none_counts_as_error(self, tmp_path: Path) -> None:
         """When the prober returns None for a file, it should be counted as an error."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "bad.mkv"
         media.touch()
 
         prober = StubProber({str(media): None})
-        pipeline = Pipeline(prober=prober)
+        pipeline = Pipeline(
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
+        )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         assert result.errors == 1
@@ -285,6 +508,7 @@ class TestLibraryProcessorOrchestration:
     def test_state_skips_unchanged_files(self, tmp_path: Path) -> None:
         """Files already processed with same size/mtime should be skipped."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -298,7 +522,11 @@ class TestLibraryProcessorOrchestration:
         state = InMemoryStateStore()
         state.update(media, 100, 1.0, matched=True)
 
-        pipeline = Pipeline(prober=prober, state=state)
+        pipeline = Pipeline(
+            probers=[prober],
+            state=state,
+            symlink_libraries=[_resolved_sym_lib(output_de)],
+        )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         assert result.skipped == 1
@@ -307,6 +535,7 @@ class TestLibraryProcessorOrchestration:
     def test_state_reprocesses_changed_mtime(self, tmp_path: Path) -> None:
         """A file with changed mtime should be reprocessed, not skipped."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -324,7 +553,12 @@ class TestLibraryProcessorOrchestration:
         symlinks.ensure_link.return_value = True
         symlinks.clean_stale.return_value = 0
 
-        pipeline = Pipeline(prober=prober, state=state, symlinks=symlinks)
+        pipeline = Pipeline(
+            probers=[prober],
+            state=state,
+            symlinks=symlinks,
+            symlink_libraries=[_resolved_sym_lib(output_de)],
+        )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         assert result.skipped == 0
@@ -333,6 +567,7 @@ class TestLibraryProcessorOrchestration:
     def test_filter_rejects_file_calls_remove_link(self, tmp_path: Path) -> None:
         """When a filter rejects a file, remove_link should be called on dest."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -348,8 +583,8 @@ class TestLibraryProcessorOrchestration:
         symlinks.clean_stale.return_value = 0
 
         pipeline = Pipeline(
-            prober=prober,
-            filters=[AudioLanguageFilter()],
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=symlinks,
         )
         processor = LibraryProcessor(pipeline)
@@ -360,6 +595,7 @@ class TestLibraryProcessorOrchestration:
     def test_filter_rejects_no_existing_symlink(self, tmp_path: Path) -> None:
         """When filter rejects and no symlink exists, counts as unchanged."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -375,8 +611,8 @@ class TestLibraryProcessorOrchestration:
         symlinks.clean_stale.return_value = 0
 
         pipeline = Pipeline(
-            prober=prober,
-            filters=[AudioLanguageFilter()],
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=symlinks,
         )
         processor = LibraryProcessor(pipeline)
@@ -386,6 +622,7 @@ class TestLibraryProcessorOrchestration:
     def test_filter_passes_existing_symlink_unchanged(self, tmp_path: Path) -> None:
         """When filter passes and symlink already exists, counts as unchanged."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -401,8 +638,8 @@ class TestLibraryProcessorOrchestration:
         symlinks.clean_stale.return_value = 0
 
         pipeline = Pipeline(
-            prober=prober,
-            filters=[AudioLanguageFilter()],
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=symlinks,
         )
         processor = LibraryProcessor(pipeline)
@@ -412,6 +649,7 @@ class TestLibraryProcessorOrchestration:
     def test_exception_during_processing_counts_as_error(self, tmp_path: Path) -> None:
         """An exception raised during processing should be caught and counted."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -420,7 +658,11 @@ class TestLibraryProcessorOrchestration:
         symlinks = MagicMock(spec=SymlinkManager)
         symlinks.clean_stale.return_value = 0
 
-        pipeline = Pipeline(prober=prober, symlinks=symlinks)
+        pipeline = Pipeline(
+            probers=[prober],
+            symlinks=symlinks,
+            symlink_libraries=[_resolved_sym_lib(output_de)],
+        )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         assert result.errors == 1
@@ -428,6 +670,7 @@ class TestLibraryProcessorOrchestration:
     def test_multiple_files_mixed_results(self, tmp_path: Path) -> None:
         """Process multiple files with different outcomes."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         good = library.input_path / "good.mkv"
         bad = library.input_path / "bad.mkv"
         good.touch()
@@ -449,8 +692,8 @@ class TestLibraryProcessorOrchestration:
         symlinks.clean_stale.return_value = 0
 
         pipeline = Pipeline(
-            prober=prober,
-            filters=[AudioLanguageFilter()],
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=symlinks,
         )
         processor = LibraryProcessor(pipeline)
@@ -462,10 +705,15 @@ class TestLibraryProcessorOrchestration:
     def test_clean_stale_added_to_removed_count(self, tmp_path: Path) -> None:
         """Stale symlinks cleaned should be added to removed count."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         symlinks = MagicMock(spec=SymlinkManager)
         symlinks.clean_stale.return_value = 5
 
-        pipeline = Pipeline(prober=StubProber({}), symlinks=symlinks)
+        pipeline = Pipeline(
+            probers=[StubProber({})],
+            symlinks=symlinks,
+            symlink_libraries=[_resolved_sym_lib(output_de)],
+        )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         assert result.removed == 5
@@ -473,6 +721,7 @@ class TestLibraryProcessorOrchestration:
     def test_dest_path_mirrors_input_structure(self, tmp_path: Path) -> None:
         """Destination path should mirror the relative path from input."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         subdir = library.input_path / "subdir"
         subdir.mkdir()
         media = subdir / "movie.mkv"
@@ -490,19 +739,20 @@ class TestLibraryProcessorOrchestration:
         symlinks.clean_stale.return_value = 0
 
         pipeline = Pipeline(
-            prober=prober,
-            filters=[AudioLanguageFilter()],
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=symlinks,
         )
         processor = LibraryProcessor(pipeline)
         processor.process_library(library)
 
-        expected_dest = library.output_path / "subdir" / "movie.mkv"
+        expected_dest = output_de / "subdir" / "movie.mkv"
         symlinks.ensure_link.assert_called_once_with(media, expected_dest)
 
-    def test_all_filters_must_pass(self, tmp_path: Path) -> None:
-        """All filters must pass for a file to be linked (implicit AND)."""
+    def test_pre_probe_filter_skips_non_media(self, tmp_path: Path) -> None:
+        """Pre-probe filters should skip files before probing."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.txt"  # bad extension
         media.touch()
 
@@ -514,23 +764,23 @@ class TestLibraryProcessorOrchestration:
         )
         prober = StubProber({str(media): info})
         symlinks = MagicMock(spec=SymlinkManager)
-        symlinks.remove_link.return_value = False
         symlinks.clean_stale.return_value = 0
 
         pipeline = Pipeline(
-            prober=prober,
-            filters=[FileExtensionFilter(), AudioLanguageFilter()],
+            probers=[prober],
+            pre_probe_filters=[FileExtensionFilter()],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=symlinks,
         )
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
-        # Extension filter rejects, so ensure_link should not be called
-        symlinks.ensure_link.assert_not_called()
-        assert result.unchanged == 1
+        # Pre-probe filter rejects, so prober should not be called
+        assert result.total == 0
 
     def test_state_updated_after_processing(self, tmp_path: Path) -> None:
         """State store should be updated after a file is processed."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
 
@@ -547,8 +797,8 @@ class TestLibraryProcessorOrchestration:
         symlinks.clean_stale.return_value = 0
 
         pipeline = Pipeline(
-            prober=prober,
-            filters=[AudioLanguageFilter()],
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
             symlinks=symlinks,
             state=state,
         )
@@ -561,36 +811,185 @@ class TestLibraryProcessorOrchestration:
     def test_clean_library_delegates_to_symlink_manager(self, tmp_path: Path) -> None:
         """clean_library should only call clean_stale."""
         library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
         symlinks = MagicMock(spec=SymlinkManager)
         symlinks.clean_stale.return_value = 3
 
-        pipeline = Pipeline(prober=StubProber({}), symlinks=symlinks)
+        pipeline = Pipeline(
+            probers=[StubProber({})],
+            symlinks=symlinks,
+            symlink_libraries=[_resolved_sym_lib(output_de)],
+        )
         processor = LibraryProcessor(pipeline)
         count = processor.clean_library(library)
 
         assert count == 3
-        symlinks.clean_stale.assert_called_once_with(library.output_path)
+        symlinks.clean_stale.assert_called_once_with(output_de)
+
+    def test_prober_fallback_chain(self, tmp_path: Path) -> None:
+        """Second prober should be used when the first returns None."""
+        library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
+        media = library.input_path / "movie.mkv"
+        media.touch()
+
+        info = MediaInfo(
+            file_path=media,
+            audio_tracks=[AudioTrack(index=0, language="de", codec="aac")],
+            size=100,
+            mtime=1.0,
+        )
+        prober1 = StubProber({})  # returns None for everything
+        prober2 = StubProber({str(media): info})  # has the result
+
+        symlinks = MagicMock(spec=SymlinkManager)
+        symlinks.ensure_link.return_value = True
+        symlinks.clean_stale.return_value = 0
+
+        pipeline = Pipeline(
+            probers=[prober1, prober2],
+            symlink_libraries=[_resolved_sym_lib(output_de)],
+            symlinks=symlinks,
+        )
+        processor = LibraryProcessor(pipeline)
+        result = processor.process_library(library)
+        assert result.created == 1
+
+    def test_multiple_symlink_libraries(self, tmp_path: Path) -> None:
+        """A single file can be linked into multiple symlink libraries."""
+        library = _make_library(tmp_path)
+        output_de = tmp_path / "output-de"
+        output_en = tmp_path / "output-en"
+        media = library.input_path / "movie.mkv"
+        media.touch()
+
+        info = MediaInfo(
+            file_path=media,
+            audio_tracks=[
+                AudioTrack(index=0, language="de", codec="aac"),
+                AudioTrack(index=1, language="en", codec="aac"),
+            ],
+            size=100,
+            mtime=1.0,
+        )
+        prober = StubProber({str(media): info})
+        symlinks = MagicMock(spec=SymlinkManager)
+        symlinks.ensure_link.return_value = True
+        symlinks.clean_stale.return_value = 0
+
+        pipeline = Pipeline(
+            probers=[prober],
+            symlink_libraries=[
+                _resolved_sym_lib(output_de, ["de"]),
+                _resolved_sym_lib(output_en, ["en"]),
+            ],
+            symlinks=symlinks,
+        )
+        processor = LibraryProcessor(pipeline)
+        result = processor.process_library(library)
+        assert result.created == 2
 
 
 class TestPipelineFactoryExtended:
     """Extended tests for PipelineFactory."""
 
     def test_for_watch_has_filters(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
         factory = PipelineFactory()
-        pipeline = factory.for_watch()
-        assert len(pipeline.filters) == 2
+        pipeline = factory.for_watch(config, library)
+        assert len(pipeline.pre_probe_filters) == 1
+        assert len(pipeline.symlink_libraries) == 1
 
     def test_shared_state_across_pipelines(self) -> None:
         """Pipelines from the same factory should share state."""
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
         state = InMemoryStateStore()
         factory = PipelineFactory(state=state)
-        scan = factory.for_scan()
-        watch = factory.for_watch()
+        scan = factory.for_scan(config, library)
+        watch = factory.for_watch(config, library)
         assert scan.state is state
         assert watch.state is state
 
     def test_for_clean_uses_provided_state(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                ),
+            ],
+        )
         state = InMemoryStateStore()
         factory = PipelineFactory(state=state)
-        pipeline = factory.for_clean()
+        pipeline = factory.for_clean(config, library)
         assert pipeline.state is state
+
+    def test_unknown_prober_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            ProberConfig(type="nonexistent")  # type: ignore[arg-type]
+
+    def test_unknown_pre_probe_filter_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            PreProbeFilterConfig(type="nonexistent")  # type: ignore[arg-type]
+
+    def test_unknown_post_probe_filter_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            PostProbeFilterConfig(type="nonexistent")  # type: ignore[arg-type]
+
+    def test_audio_language_filter_without_languages_raises(self) -> None:
+        from boomarr.const import PostProbeFilterType
+
+        config = PostProbeFilterConfig(type=PostProbeFilterType.AUDIO_LANGUAGE)
+        with pytest.raises(ValueError, match="languages"):
+            PipelineFactory._build_post_probe_filter(config)
+
+    def test_explicit_output_path_used(self) -> None:
+        config = _make_config()
+        library = LibraryConfig(
+            name="T",
+            input_path=Path("/a"),
+            output_path=Path("/b"),
+            symlink_libraries=[
+                SymlinkLibraryConfig(
+                    filters=[
+                        AudioLanguageFilterConfig(languages=["de"]),
+                    ],
+                    output_path=Path("/custom/output"),
+                ),
+            ],
+        )
+        factory = PipelineFactory()
+        pipeline = factory.for_scan(config, library)
+        assert (
+            pipeline.symlink_libraries[0].output_path
+            == Path("/custom/output").resolve()
+        )

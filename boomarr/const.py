@@ -17,6 +17,24 @@ class LogLevel(StrEnum):
     CRITICAL = "CRITICAL"
 
 
+class PreProbeFilterType(StrEnum):
+    """Discriminator values for pre-probe filter config types."""
+
+    FILE_EXTENSION = "file_extension"
+
+
+class ProberType(StrEnum):
+    """Discriminator values for prober config types."""
+
+    FFPROBE = "ffprobe"
+
+
+class PostProbeFilterType(StrEnum):
+    """Discriminator values for post-probe filter config types."""
+
+    AUDIO_LANGUAGE = "audio_language"
+
+
 ENV_CONFIG_DIR = "CONFIG_DIR"
 ENV_CONFIG_FILE_NAME = "CONFIG_FILE_NAME"
 ENV_LOG_LEVEL = "LOG_LEVEL"
@@ -67,11 +85,19 @@ CONF_LOGGING_ROTATION_MAX_BYTES = "max_bytes"
 CONF_LOGGING_ROTATION_BACKUP_COUNT = "backup_count"
 CONF_LOGGING_ROTATION_ROTATE_ON_START = "rotate_on_start"
 
+CONF_PROBERS = "probers"
+CONF_PRE_PROBE_FILTERS = "pre_probe_filters"
+CONF_SYMLINK_LIBRARIES = "symlink_libraries"
+
 CONF_LIBRARIES = "libraries"
 CONF_LIBRARY_NAME = "name"
 CONF_LIBRARY_INPUT_PATH = "input_path"
 CONF_LIBRARY_OUTPUT_PATH = "output_path"
-CONF_LIBRARY_LANGUAGES = "languages"
+
+DEFAULT_PROBERS: list[ProberType] = [ProberType.FFPROBE]
+DEFAULT_PRE_PROBE_FILTERS: list[PreProbeFilterType] = [
+    PreProbeFilterType.FILE_EXTENSION
+]
 
 MEDIA_EXTENSIONS: frozenset[str] = frozenset(
     {".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".flv", ".mov", ".webm"}

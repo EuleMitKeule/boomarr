@@ -1,0 +1,18 @@
+libraries:
+  - name: "Movies"
+    input_path: /media/movies
+    output_path: /media/filtered/movies
+    symlink_libraries:
+      - filters:
+          - type: audio_language
+            languages:
+              - deu
+
+  - name: "Shows"
+    input_path: /media/shows
+    output_path: /media/filtered/shows
+    symlink_libraries:
+      - filters:
+          - type: audio_language
+            languages:
+              - deu
