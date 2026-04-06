@@ -47,8 +47,11 @@ from boomarr.const import (
     DEFAULT_PRE_PROBE_FILTERS,
     DEFAULT_PROBERS,
     DEFAULT_PUID,
+    DEFAULT_SCHEDULE_INTERVAL,
+    DEFAULT_SCHEDULE_RUN_ON_START,
     DEFAULT_TZ,
     DEFAULT_UMASK,
+    DEFAULT_WATCH_DEBOUNCE,
     ENV_PREFIX_GENERAL,
     ENV_PREFIX_LOG_ROTATION,
     ENV_PREFIX_LOGGING,
@@ -57,16 +60,21 @@ from boomarr.const import (
     PostProbeFilterType,
     PreProbeFilterType,
     ProberType,
+    TriggerType,
 )
 
 __all__ = [
     "AnyDatabaseConfig",
+    "AnyTriggerConfig",
     "DatabaseType",
     "MemoryDatabaseConfig",
     "PostProbeFilterType",
     "PreProbeFilterType",
     "ProberType",
+    "ScheduleTriggerConfig",
     "SQLiteDatabaseConfig",
+    "TriggerType",
+    "WatchConfig",
 ]
 
 _LOGGER = logging.getLogger(APP_NAME)
@@ -255,6 +263,52 @@ class AudioLanguageFilterConfig(PostProbeFilterConfig):
 AnyPostProbeFilterConfig = AudioLanguageFilterConfig
 
 
+class TriggerConfig(BaseModel):
+    """Base class for trigger source configurations."""
+
+    type: TriggerType
+
+
+class ScheduleTriggerConfig(TriggerConfig):
+    """Configuration for the periodic schedule trigger.
+
+    Triggers a full rescan at a fixed interval.  When ``run_on_start``
+    is ``True`` (the default) an immediate scan is emitted before the
+    first interval elapses.
+    """
+
+    type: Literal[TriggerType.SCHEDULE] = TriggerType.SCHEDULE
+    interval: int = Field(default=DEFAULT_SCHEDULE_INTERVAL, validate_default=True)
+    run_on_start: bool = Field(
+        default=DEFAULT_SCHEDULE_RUN_ON_START, validate_default=True
+    )
+
+    @field_validator("interval", mode="after")
+    @classmethod
+    def _validate_interval_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("interval must be a positive number of seconds")
+        return v
+
+
+AnyTriggerConfig = ScheduleTriggerConfig
+
+
+class WatchConfig(BaseModel):
+    """Watch-mode sub-configuration."""
+
+    _env_prefix: ClassVar[str] = "WATCH"
+
+    debounce: float = Field(default=DEFAULT_WATCH_DEBOUNCE, validate_default=True)
+
+    @field_validator("debounce", mode="after")
+    @classmethod
+    def _validate_debounce_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("debounce must be non-negative")
+        return v
+
+
 class SymlinkLibraryConfig(BaseModel):
     """Configuration for a single symlink library output."""
 
@@ -383,6 +437,7 @@ class Config(BaseModel):
         default_factory=SQLiteDatabaseConfig, discriminator="type"
     )
     output_path: Path | None = None
+    watch: WatchConfig = Field(default_factory=WatchConfig)
     probers: list[AnyProberConfig] = Field(
         default_factory=lambda: [_prober_config_from_name(n) for n in DEFAULT_PROBERS],
     )
@@ -391,9 +446,12 @@ class Config(BaseModel):
             _pre_probe_filter_config_from_name(n) for n in DEFAULT_PRE_PROBE_FILTERS
         ],
     )
+    triggers: list[AnyTriggerConfig] = Field(
+        default_factory=lambda: [ScheduleTriggerConfig()]
+    )
     libraries: list[LibraryConfig] = Field(default_factory=list)
 
-    @field_validator("probers", "pre_probe_filters", mode="before")
+    @field_validator("probers", "pre_probe_filters", "triggers", mode="before")
     @classmethod
     def _coerce_to_typed_dicts(cls, v: object) -> object:
         return _coerce_typed_list(v)
@@ -592,6 +650,9 @@ def load_config(
     pre_probe_raw = yaml_data.get("pre_probe_filters")
     if pre_probe_raw is not None:
         extra_fields["pre_probe_filters"] = pre_probe_raw
+    triggers_raw = yaml_data.get("triggers")
+    if triggers_raw is not None:
+        extra_fields["triggers"] = triggers_raw
     output_path_raw = yaml_data.get("output_path")
     if output_path_raw is not None:
         extra_fields["output_path"] = output_path_raw

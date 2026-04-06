@@ -33,6 +33,7 @@ from boomarr.log import setup_logging
 from boomarr.models import ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
+from boomarr.watcher import Watcher
 
 _LOGGER = logging.getLogger(APP_NAME)
 
@@ -220,7 +221,33 @@ def watch(
 
     verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
 
-    typer.echo("not implemented")
+    if not config.libraries:
+        _LOGGER.warning("No libraries configured — nothing to watch")
+        return
+
+    if not config.triggers:
+        _LOGGER.warning("No triggers configured — nothing to watch")
+        return
+
+    triggers = PipelineFactory.build_triggers(config.triggers)
+    state = PipelineFactory.build_state_store(config)
+    factory = PipelineFactory(state=state)
+
+    def scan_all() -> ScanResult:
+        total = ScanResult()
+        for library in config.libraries:
+            pipeline = factory.for_watch(config, library)
+            processor = LibraryProcessor(pipeline)
+            result = processor.process_library(library)
+            total.merge(result)
+        return total
+
+    watcher = Watcher(
+        triggers=triggers,
+        scan_callback=scan_all,
+        debounce_seconds=config.watch.debounce,
+    )
+    watcher.run()
 
 
 @app.command("clean", help="Run stale symlink cleanup only.")

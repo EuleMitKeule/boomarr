@@ -28,6 +28,18 @@ class MediaInfo:
     mtime: float = 0.0
 
 
+@dataclass(frozen=True)
+class ScanEvent:
+    """A trigger event requesting a full library rescan.
+
+    All trigger sources produce these events into the shared watcher queue.
+    The watcher debounces and processes them.
+    """
+
+    source: str
+    timestamp: float
+
+
 @dataclass
 class ScanResult:
     """Aggregated results from processing a library."""

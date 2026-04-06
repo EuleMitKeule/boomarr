@@ -42,6 +42,12 @@ class DatabaseType(StrEnum):
     SQLITE = "sqlite"
 
 
+class TriggerType(StrEnum):
+    """Discriminator values for trigger source config types."""
+
+    SCHEDULE = "schedule"
+
+
 ENV_CONFIG_DIR = "CONFIG_DIR"
 ENV_CONFIG_FILE_NAME = "CONFIG_FILE_NAME"
 ENV_LOG_LEVEL = "LOG_LEVEL"
@@ -98,6 +104,7 @@ CONF_LOGGING_ROTATION_ROTATE_ON_START = "rotate_on_start"
 CONF_PROBERS = "probers"
 CONF_PRE_PROBE_FILTERS = "pre_probe_filters"
 CONF_SYMLINK_LIBRARIES = "symlink_libraries"
+CONF_TRIGGERS = "triggers"
 
 CONF_LIBRARIES = "libraries"
 CONF_LIBRARY_NAME = "name"
@@ -114,6 +121,11 @@ DEFAULT_PROBERS: list[ProberType] = [ProberType.FFPROBE]
 DEFAULT_PRE_PROBE_FILTERS: list[PreProbeFilterType] = [
     PreProbeFilterType.FILE_EXTENSION
 ]
+
+DEFAULT_SCHEDULE_INTERVAL: int = 600  # 10 minutes
+DEFAULT_SCHEDULE_RUN_ON_START: bool = True
+
+DEFAULT_WATCH_DEBOUNCE: float = 2.0
 
 MEDIA_EXTENSIONS: frozenset[str] = frozenset(
     {".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".flv", ".mov", ".webm"}

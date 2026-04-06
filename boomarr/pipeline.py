@@ -27,6 +27,8 @@ from boomarr.config import (
     ProberConfig,
     ProberType,
     SQLiteDatabaseConfig,
+    TriggerConfig,
+    TriggerType,
 )
 from boomarr.filters.audio_language import AudioLanguageFilter
 from boomarr.filters.base import PostProbeFilter, PreProbeFilter
@@ -35,6 +37,8 @@ from boomarr.probers.base import MediaProber
 from boomarr.probers.ffprobe import FFProbeProber
 from boomarr.state import InMemoryStateStore, SQLiteStateStore, StateStore
 from boomarr.symlinks import SymlinkManager
+from boomarr.triggers.base import TriggerSource
+from boomarr.triggers.schedule import ScheduleTrigger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,6 +89,23 @@ class PipelineFactory:
         if isinstance(db, SQLiteDatabaseConfig):
             return SQLiteStateStore(db.db_file)
         return InMemoryStateStore()
+
+    @staticmethod
+    def build_triggers(configs: Sequence[TriggerConfig]) -> list[TriggerSource]:
+        """Build trigger source instances from a list of trigger configs."""
+        triggers: list[TriggerSource] = []
+        for config in configs:
+            match config.type:
+                case TriggerType.SCHEDULE:
+                    triggers.append(
+                        ScheduleTrigger(
+                            interval=getattr(config, "interval", 3600),
+                            run_on_start=getattr(config, "run_on_start", True),
+                        )
+                    )
+                case _:
+                    raise ValueError(f"Unknown trigger: {config.type!r}")
+        return triggers
 
     @staticmethod
     def _build_probers(configs: Sequence[ProberConfig]) -> list[MediaProber]:

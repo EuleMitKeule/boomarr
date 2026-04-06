@@ -3,6 +3,14 @@
 # Can be overridden per library.
 output_path: /media/filtered
 
+# Trigger sources for watch mode.
+# Multiple triggers can run simultaneously; all feed into the same
+# internal event queue with automatic debouncing.
+# triggers:
+#   - type: schedule
+#     interval: 3600        # seconds between rescans (default: 3600)
+#     run_on_start: true     # emit a scan event immediately on startup (default: true)
+
 libraries:
   - name: "Movies"
     input_path: /media/movies
