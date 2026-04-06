@@ -65,7 +65,7 @@ class SymlinkManager:
         for path in list(output_dir.rglob("*")):
             if path.is_symlink() and not path.exists():
                 path.unlink()
-                _LOGGER.debug("Removed stale symlink '%s'", path)
+                _LOGGER.info("Removed stale symlink '%s'", path)
                 removed += 1
 
         subdirs = sorted(
