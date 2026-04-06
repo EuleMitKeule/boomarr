@@ -222,6 +222,107 @@ class TestSymlinkManager:
         assert mgr.clean_stale(out) == 1
         assert not stale.exists()
 
+    @_skip_no_symlink
+    def test_clean_stale_valid_symlink_kept(self, tmp_path: Path) -> None:
+        """A symlink whose target still exists must not be removed."""
+        source = tmp_path / "real.mkv"
+        source.touch()
+        out = tmp_path / "output"
+        out.mkdir()
+        link = out / "real.mkv"
+        link.symlink_to(source)
+
+        mgr = SymlinkManager()
+        assert mgr.clean_stale(out) == 0
+        assert link.is_symlink()
+
+    @_skip_no_symlink
+    def test_clean_stale_prunes_empty_dir(self, tmp_path: Path) -> None:
+        """Empty directory left by stale symlink removal must be pruned."""
+        out = tmp_path / "output"
+        sub = out / "Season 1"
+        sub.mkdir(parents=True)
+        stale = sub / "ep.mkv"
+        stale.symlink_to(tmp_path / "nonexistent")
+
+        mgr = SymlinkManager()
+        assert mgr.clean_stale(out) == 1
+        assert not stale.exists()
+        assert not sub.exists(), "empty subdirectory should have been pruned"
+
+    @_skip_no_symlink
+    def test_clean_stale_prunes_nested_empty_dirs(self, tmp_path: Path) -> None:
+        """Nested empty dirs (Show/Season/ep) must all be removed bottom-up."""
+        out = tmp_path / "output"
+        nested = out / "Show" / "Season 2"
+        nested.mkdir(parents=True)
+        stale = nested / "ep.mkv"
+        stale.symlink_to(tmp_path / "nonexistent")
+
+        mgr = SymlinkManager()
+        assert mgr.clean_stale(out) == 1
+        assert not stale.exists()
+        assert not nested.exists(), "leaf empty dir should be pruned"
+        assert not (out / "Show").exists(), "parent empty dir should be pruned"
+
+    @_skip_no_symlink
+    def test_clean_stale_keeps_nonempty_dir(self, tmp_path: Path) -> None:
+        """A directory that still holds a valid symlink must not be removed."""
+        source = tmp_path / "real.mkv"
+        source.touch()
+        out = tmp_path / "output"
+        sub = out / "Season 1"
+        sub.mkdir(parents=True)
+        valid = sub / "real.mkv"
+        valid.symlink_to(source)
+        stale = sub / "gone.mkv"
+        stale.symlink_to(tmp_path / "nonexistent")
+
+        mgr = SymlinkManager()
+        assert mgr.clean_stale(out) == 1
+        assert not stale.exists()
+        assert sub.is_dir(), "non-empty subdirectory must not be removed"
+        assert valid.is_symlink(), "valid symlink must be preserved"
+
+    @_skip_no_symlink
+    def test_clean_stale_logs_removed_symlink(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Each removed stale symlink must be logged at INFO level."""
+        import logging
+
+        out = tmp_path / "output"
+        sub = out / "sub"
+        sub.mkdir(parents=True)
+        stale = sub / "gone.mkv"
+        stale.symlink_to(tmp_path / "nonexistent")
+
+        mgr = SymlinkManager()
+        with caplog.at_level(logging.INFO, logger="boomarr.symlinks"):
+            mgr.clean_stale(out)
+
+        assert any("gone.mkv" in record.message for record in caplog.records)
+        assert any(record.levelno == logging.INFO for record in caplog.records)
+
+    @_skip_no_symlink
+    def test_clean_stale_nonexistent_output_dir(self, tmp_path: Path) -> None:
+        """clean_stale on a missing directory must return 0 without error."""
+        mgr = SymlinkManager()
+        assert mgr.clean_stale(tmp_path / "does_not_exist") == 0
+
+    @_skip_no_symlink
+    def test_clean_stale_multiple_dangling_links(self, tmp_path: Path) -> None:
+        """Multiple dangling symlinks across sibling dirs are all removed."""
+        out = tmp_path / "output"
+        for season in ("Season 1", "Season 2"):
+            (out / season).mkdir(parents=True)
+            (out / season / "ep.mkv").symlink_to(tmp_path / "missing")
+
+        mgr = SymlinkManager()
+        assert mgr.clean_stale(out) == 2
+        assert not (out / "Season 1").exists()
+        assert not (out / "Season 2").exists()
+
 
 class TestPipelineFactory:
     def test_for_scan_has_pre_probe_filters(self) -> None:

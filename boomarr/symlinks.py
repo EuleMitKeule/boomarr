@@ -53,16 +53,31 @@ class SymlinkManager:
     def clean_stale(self, output_dir: Path) -> int:
         """Remove all broken symlinks under ``output_dir`` recursively.
 
+        After removing stale symlinks, empty subdirectories left behind are
+        also pruned (bottom-up so nested empty trees collapse fully).
+
         Returns the number of stale symlinks removed.
         """
         removed = 0
         if not output_dir.is_dir():
             return removed
 
-        for path in output_dir.rglob("*"):
-            if path.is_symlink() and not path.resolve().exists():
+        for path in list(output_dir.rglob("*")):
+            if path.is_symlink() and not path.exists():
                 path.unlink()
-                _LOGGER.debug("Cleaned stale symlink '%s'", path)
+                _LOGGER.debug("Removed stale symlink '%s'", path)
                 removed += 1
+
+        subdirs = sorted(
+            (p for p in output_dir.rglob("*") if p.is_dir()),
+            key=lambda p: len(p.parts),
+            reverse=True,
+        )
+        for dirpath in subdirs:
+            try:
+                dirpath.rmdir()
+                _LOGGER.debug("Pruned empty directory '%s'", dirpath)
+            except OSError:
+                pass
 
         return removed
