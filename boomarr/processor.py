@@ -73,6 +73,14 @@ class LibraryProcessor:
                 continue
 
             try:
+                stat = file_path.stat()
+                file_size = stat.st_size
+                file_mtime = stat.st_mtime
+
+                if state.is_unchanged(file_path, file_size, file_mtime):
+                    result.skipped += 1
+                    continue
+
                 info = None
                 for prober in probers:
                     info = prober.probe(file_path)
@@ -81,10 +89,6 @@ class LibraryProcessor:
 
                 if info is None:
                     result.errors += 1
-                    continue
-
-                if state.is_unchanged(file_path, info.size, info.mtime):
-                    result.skipped += 1
                     continue
 
                 matched_any = False
@@ -110,7 +114,7 @@ class LibraryProcessor:
                         else:
                             result.unchanged += 1
 
-                state.update(file_path, info.size, info.mtime, matched=matched_any)
+                state.update(file_path, file_size, file_mtime, matched=matched_any)
 
             except Exception as e:
                 _LOGGER.exception("Error processing '%s': %s", file_path, e)

@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from boomarr.const import (
     APP_NAME,
     CONF_CONFIG_DIR,
+    CONF_DATABASE,
+    CONF_DATABASE_DIR,
     CONF_GENERAL_TZ,
     CONF_GENERAL_UMASK,
     CONF_LIBRARIES,
@@ -29,6 +31,8 @@ from boomarr.const import (
     CONF_LOGGING_FILE_NAME,
     CONF_LOGGING_LEVEL,
     CONF_OUTPUT_PATH,
+    DEFAULT_DB_DIR,
+    DEFAULT_DB_FILE_NAME,
     DEFAULT_LOG_COLOR,
     DEFAULT_LOG_DATE_FORMAT,
     DEFAULT_LOG_DIR,
@@ -48,6 +52,7 @@ from boomarr.const import (
     ENV_PREFIX_GENERAL,
     ENV_PREFIX_LOG_ROTATION,
     ENV_PREFIX_LOGGING,
+    DatabaseType,
     LogLevel,
     PostProbeFilterType,
     PreProbeFilterType,
@@ -55,9 +60,13 @@ from boomarr.const import (
 )
 
 __all__ = [
+    "AnyDatabaseConfig",
+    "DatabaseType",
+    "MemoryDatabaseConfig",
     "PostProbeFilterType",
     "PreProbeFilterType",
     "ProberType",
+    "SQLiteDatabaseConfig",
 ]
 
 _LOGGER = logging.getLogger(APP_NAME)
@@ -336,6 +345,33 @@ def _pre_probe_filter_config_from_name(
             raise ValueError(f"Unknown pre-probe filter type: {filter_type!r}")
 
 
+class MemoryDatabaseConfig(BaseModel):
+    """In-memory (non-persistent) database backend configuration."""
+
+    type: Literal[DatabaseType.MEMORY] = DatabaseType.MEMORY
+
+
+class SQLiteDatabaseConfig(BaseModel):
+    """SQLite database backend configuration."""
+
+    type: Literal[DatabaseType.SQLITE] = DatabaseType.SQLITE
+    dir: Path = Field(default=DEFAULT_DB_DIR, validate_default=True)
+    file_name: str = Field(default=DEFAULT_DB_FILE_NAME)
+
+    @property
+    def db_file(self) -> Path:
+        """Return the resolved path to the SQLite database file."""
+        return self.dir / self.file_name
+
+    @field_validator(CONF_DATABASE_DIR, mode="after")
+    @classmethod
+    def _resolve_dir_to_absolute(cls, v: Path) -> Path:
+        return v.resolve()
+
+
+AnyDatabaseConfig = MemoryDatabaseConfig | SQLiteDatabaseConfig
+
+
 class Config(BaseModel):
     """Boomarr root configuration."""
 
@@ -343,6 +379,9 @@ class Config(BaseModel):
     config_file: str
     general: GeneralConfig
     logging: LoggingConfig
+    database: AnyDatabaseConfig = Field(
+        default_factory=SQLiteDatabaseConfig, discriminator="type"
+    )
     output_path: Path | None = None
     probers: list[AnyProberConfig] = Field(
         default_factory=lambda: [_prober_config_from_name(n) for n in DEFAULT_PROBERS],
@@ -556,6 +595,20 @@ def load_config(
     output_path_raw = yaml_data.get("output_path")
     if output_path_raw is not None:
         extra_fields["output_path"] = output_path_raw
+    database_raw = yaml_data.get(CONF_DATABASE)
+    resolved_config_dir = config_dir.resolve()
+    if database_raw is None:
+        # Default: sqlite stored alongside the config file
+        extra_fields[CONF_DATABASE] = {
+            "type": DatabaseType.SQLITE,
+            "dir": str(resolved_config_dir),
+        }
+    else:
+        db_raw = dict(database_raw)
+        db_type = str(db_raw.get("type", DatabaseType.SQLITE))
+        if db_type == DatabaseType.SQLITE and "dir" not in db_raw:
+            db_raw["dir"] = str(resolved_config_dir)
+        extra_fields[CONF_DATABASE] = db_raw
 
     try:
         _config = Config(

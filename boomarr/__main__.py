@@ -13,7 +13,7 @@ from typing import Annotated
 import typer
 from dotenv import load_dotenv
 
-from boomarr.config import Config, LibraryConfig, load_config
+from boomarr.config import Config, LibraryConfig, SQLiteDatabaseConfig, load_config
 from boomarr.const import (
     APP_NAME,
     DEFAULT_CONFIG_DIR,
@@ -33,7 +33,6 @@ from boomarr.log import setup_logging
 from boomarr.models import ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
-from boomarr.state import InMemoryStateStore
 
 _LOGGER = logging.getLogger(APP_NAME)
 
@@ -181,7 +180,7 @@ def scan(
 
     verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
 
-    factory = PipelineFactory()
+    factory = PipelineFactory(state=PipelineFactory.build_state_store(config))
     total = ScanResult()
 
     for library in config.libraries:
@@ -290,6 +289,9 @@ def paths(
         else config.logging.dir
     )
 
+    if isinstance(config.database, SQLiteDatabaseConfig):
+        _emit(config.database.db_file.parent)
+
     for library in config.libraries:
         base_output: Path | None = (
             library.output_path
@@ -315,17 +317,19 @@ def status(
     Displays a summary of the current cache state and when the last scan
     was performed.
     """
-    _init_config(config_dir, config_file_name, log_level, log_dir, log_file_name)
+    config = _init_config(
+        config_dir, config_file_name, log_level, log_dir, log_file_name
+    )
     _LOGGER.info("Showing status")
 
-    state = InMemoryStateStore()
+    state = PipelineFactory.build_state_store(config)
     stats = state.get_stats()
 
     _LOGGER.info(
         "Cache stats: %d total, %d matched, last scan: %s",
-        stats.get("total", 0),
+        stats.get("total_cached", 0),
         stats.get("matched", 0),
-        stats.get("last_scan"),
+        stats.get("last_scan_time"),
     )
 
 

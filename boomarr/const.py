@@ -35,6 +35,13 @@ class PostProbeFilterType(StrEnum):
     AUDIO_LANGUAGE = "audio_language"
 
 
+class DatabaseType(StrEnum):
+    """Discriminator values for database backend config types."""
+
+    MEMORY = "memory"
+    SQLITE = "sqlite"
+
+
 ENV_CONFIG_DIR = "CONFIG_DIR"
 ENV_CONFIG_FILE_NAME = "CONFIG_FILE_NAME"
 ENV_LOG_LEVEL = "LOG_LEVEL"
@@ -65,6 +72,9 @@ DEFAULT_LOG_ROTATION_MAX_BYTES = 10_485_760  # 10 MB
 DEFAULT_LOG_ROTATION_BACKUP_COUNT = 3
 DEFAULT_LOG_ROTATION_ROTATE_ON_START = True
 
+DEFAULT_DB_DIR: Path = Path("./config")
+DEFAULT_DB_FILE_NAME: str = "boomarr.db"
+
 CONF_CONFIG_DIR = "config_dir"
 
 CONF_GENERAL = "general"
@@ -94,6 +104,11 @@ CONF_LIBRARY_NAME = "name"
 CONF_LIBRARY_INPUT_PATH = "input_path"
 CONF_LIBRARY_OUTPUT_PATH = "output_path"
 CONF_OUTPUT_PATH = "output_path"
+
+CONF_DATABASE = "database"
+CONF_DATABASE_TYPE = "type"
+CONF_DATABASE_DIR = "dir"
+CONF_DATABASE_FILE_NAME = "file_name"
 
 DEFAULT_PROBERS: list[ProberType] = [ProberType.FFPROBE]
 DEFAULT_PRE_PROBE_FILTERS: list[PreProbeFilterType] = [

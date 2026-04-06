@@ -103,7 +103,7 @@ class TestPathsCommand:
         )
         assert result.exit_code == 0
         lines = [line for line in result.output.strip().splitlines() if line]
-        assert lines == [str(log_dir)]
+        assert set(lines) == {str(log_dir), str(tmp_path)}
 
     def test_no_duplicate_paths(self, tmp_path: Path) -> None:
         """Two symlink libraries with the same resolved path should appear once."""

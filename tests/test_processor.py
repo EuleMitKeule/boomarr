@@ -173,7 +173,7 @@ class TestInMemoryStateStore:
         store.update(Path("/a.mkv"), 100, 1.0, matched=True)
         store.update(Path("/b.mkv"), 200, 2.0, matched=False)
         stats = store.get_stats()
-        assert stats["total_tracked"] == 2
+        assert stats["total_cached"] == 2
         assert stats["matched"] == 1
 
     def test_remove_clears_entry(self) -> None:
@@ -614,16 +614,17 @@ class TestLibraryProcessorOrchestration:
         output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
+        stat = media.stat()
 
         info = MediaInfo(
             file_path=media,
             audio_tracks=[AudioTrack(index=0, language="de", codec="aac")],
-            size=100,
-            mtime=1.0,
+            size=stat.st_size,
+            mtime=stat.st_mtime,
         )
         prober = StubProber({str(media): info})
         state = InMemoryStateStore()
-        state.update(media, 100, 1.0, matched=True)
+        state.update(media, stat.st_size, stat.st_mtime, matched=True)
 
         pipeline = Pipeline(
             probers=[prober],
@@ -641,16 +642,18 @@ class TestLibraryProcessorOrchestration:
         output_de = tmp_path / "output-de"
         media = library.input_path / "movie.mkv"
         media.touch()
+        stat = media.stat()
 
         info = MediaInfo(
             file_path=media,
             audio_tracks=[AudioTrack(index=0, language="de", codec="aac")],
-            size=100,
-            mtime=2.0,
+            size=stat.st_size,
+            mtime=stat.st_mtime,
         )
         prober = StubProber({str(media): info})
         state = InMemoryStateStore()
-        state.update(media, 100, 1.0, matched=True)  # old mtime
+        # Seed with a different mtime to simulate a changed file
+        state.update(media, stat.st_size, stat.st_mtime - 1.0, matched=True)
 
         symlinks = MagicMock(spec=SymlinkManager)
         symlinks.ensure_link.return_value = True
@@ -887,11 +890,13 @@ class TestLibraryProcessorOrchestration:
         media = library.input_path / "movie.mkv"
         media.touch()
 
+        stat = media.stat()
+
         info = MediaInfo(
             file_path=media,
             audio_tracks=[AudioTrack(index=0, language="de", codec="aac")],
-            size=100,
-            mtime=1.0,
+            size=stat.st_size,
+            mtime=stat.st_mtime,
         )
         prober = StubProber({str(media): info})
         state = InMemoryStateStore()
@@ -908,8 +913,8 @@ class TestLibraryProcessorOrchestration:
         processor = LibraryProcessor(pipeline)
         processor.process_library(library)
 
-        # After first run, file should be marked as unchanged
-        assert state.is_unchanged(media, 100, 1.0) is True
+        # After first run, file should be marked as unchanged using real fs stat
+        assert state.is_unchanged(media, stat.st_size, stat.st_mtime) is True
 
     def test_clean_library_delegates_to_symlink_manager(self, tmp_path: Path) -> None:
         """clean_library should only call clean_stale."""

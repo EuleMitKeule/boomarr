@@ -26,13 +26,14 @@ from boomarr.config import (
     PreProbeFilterType,
     ProberConfig,
     ProberType,
+    SQLiteDatabaseConfig,
 )
 from boomarr.filters.audio_language import AudioLanguageFilter
 from boomarr.filters.base import PostProbeFilter, PreProbeFilter
 from boomarr.filters.file_extension import FileExtensionFilter
 from boomarr.probers.base import MediaProber
 from boomarr.probers.ffprobe import FFProbeProber
-from boomarr.state import InMemoryStateStore, StateStore
+from boomarr.state import InMemoryStateStore, SQLiteStateStore, StateStore
 from boomarr.symlinks import SymlinkManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,6 +77,14 @@ class PipelineFactory:
 
     def __init__(self, *, state: StateStore | None = None) -> None:
         self._state = state or InMemoryStateStore()
+
+    @staticmethod
+    def build_state_store(config: Config) -> StateStore:
+        """Build a StateStore from the database configuration."""
+        db = config.database
+        if isinstance(db, SQLiteDatabaseConfig):
+            return SQLiteStateStore(db.db_file)
+        return InMemoryStateStore()
 
     @staticmethod
     def _build_probers(configs: Sequence[ProberConfig]) -> list[MediaProber]:
