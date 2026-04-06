@@ -214,3 +214,22 @@ class TestSQLiteStateStore(_SharedStateBehaviour):
         store.close()
         # Second close should not raise
         store.close()
+
+    def test_corrupt_db_is_reset(self, tmp_path: Path) -> None:
+        """A corrupt database file should be silently replaced."""
+        db_path = tmp_path / "corrupt.db"
+        db_path.write_bytes(b"this is not a sqlite database")
+
+        store = SQLiteStateStore(db_path)
+        # Should be usable after reset
+        store.update(FILE_A, size=100, mtime=1.0, matched=True)
+        assert store.is_unchanged(FILE_A, size=100, mtime=1.0) is True
+        store.close()
+
+    def test_has_threading_lock(self, tmp_path: Path) -> None:
+        """SQLiteStateStore should have a threading lock for thread safety."""
+        import threading
+
+        store = self.make_store(tmp_path)
+        assert hasattr(store, "_lock")
+        assert isinstance(store._lock, type(threading.Lock()))

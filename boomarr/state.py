@@ -8,6 +8,7 @@ status to enable resumable operations and conflict detection.
 import abc
 import logging
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -107,57 +108,87 @@ class SQLiteStateStore(StateStore):
         self._db_path = db_path
         self._hits: int = 0
         self._misses: int = 0
+        self._lock = threading.Lock()
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn = self._open_or_reset(db_path)
         self._conn.executescript(_CREATE_TABLE_SQL)
         self._conn.commit()
         _LOGGER.debug("SQLiteStateStore opened: %s", db_path)
 
+    def _open_or_reset(self, db_path: Path) -> sqlite3.Connection:
+        """Open the database, running an integrity check.
+
+        If the file is corrupt or unreadable, delete it and create a fresh one.
+        """
+        try:
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            result = conn.execute("PRAGMA integrity_check").fetchone()
+            if result and result[0] != "ok":
+                raise sqlite3.DatabaseError(result[0])
+            return conn
+        except sqlite3.DatabaseError as exc:
+            _LOGGER.warning("SQLite database corrupt (%s), resetting: %s", exc, db_path)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            db_path.unlink(missing_ok=True)
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            return conn
+
     def is_unchanged(self, file: Path, size: int, mtime: float) -> bool:
-        row = self._conn.execute(
-            "SELECT mtime, size FROM file_cache WHERE path = ?",
-            (str(file),),
-        ).fetchone()
-        if row is None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT mtime, size FROM file_cache WHERE path = ?",
+                (str(file),),
+            ).fetchone()
+            if row is None:
+                self._misses += 1
+                return False
+            stored_mtime, stored_size = row
+            if stored_mtime == mtime and stored_size == size:
+                self._hits += 1
+                return True
+            # File changed — invalidate stale entry
+            self._conn.execute("DELETE FROM file_cache WHERE path = ?", (str(file),))
+            self._conn.commit()
             self._misses += 1
             return False
-        stored_mtime, stored_size = row
-        if stored_mtime == mtime and stored_size == size:
-            self._hits += 1
-            return True
-        # File changed — invalidate stale entry
-        self._conn.execute("DELETE FROM file_cache WHERE path = ?", (str(file),))
-        self._conn.commit()
-        self._misses += 1
-        return False
 
     def update(self, file: Path, size: int, mtime: float, matched: bool) -> None:
-        self._conn.execute(
-            _UPSERT_SQL,
-            (str(file), mtime, size, 1 if matched else 0, time.time()),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                _UPSERT_SQL,
+                (str(file), mtime, size, 1 if matched else 0, time.time()),
+            )
+            self._conn.commit()
 
     def remove(self, file: Path) -> None:
-        self._conn.execute("DELETE FROM file_cache WHERE path = ?", (str(file),))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM file_cache WHERE path = ?", (str(file),))
+            self._conn.commit()
 
     def close(self) -> None:
         """Close the underlying database connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def get_stats(self) -> dict[str, Any]:
-        total: int = self._conn.execute("SELECT COUNT(*) FROM file_cache").fetchone()[0]
-        matched: int = self._conn.execute(
-            "SELECT COUNT(*) FROM file_cache WHERE has_match = 1"
-        ).fetchone()[0]
-        last_scan_row = self._conn.execute(
-            "SELECT MAX(checked_at) FROM file_cache"
-        ).fetchone()
-        last_scan_time: float | None = last_scan_row[0] if last_scan_row else None
-        total_probed = self._hits + self._misses
-        hit_rate = self._hits / total_probed if total_probed > 0 else 0.0
+        with self._lock:
+            total: int = self._conn.execute(
+                "SELECT COUNT(*) FROM file_cache"
+            ).fetchone()[0]
+            matched: int = self._conn.execute(
+                "SELECT COUNT(*) FROM file_cache WHERE has_match = 1"
+            ).fetchone()[0]
+            last_scan_row = self._conn.execute(
+                "SELECT MAX(checked_at) FROM file_cache"
+            ).fetchone()
+            last_scan_time: float | None = last_scan_row[0] if last_scan_row else None
+            total_probed = self._hits + self._misses
+            hit_rate = self._hits / total_probed if total_probed > 0 else 0.0
         return {
             "total_cached": total,
             "matched": matched,

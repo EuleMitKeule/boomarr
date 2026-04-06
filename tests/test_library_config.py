@@ -419,3 +419,120 @@ class TestOutputPathValidation:
         config = load_config(tmp_path, "boomarr.yml")
         assert config.libraries[0].output_path is not None
         assert config.libraries[1].output_path is None
+
+
+class TestPathOverlapValidation:
+    """Tests for input_path / output_path overlap detection."""
+
+    def test_output_equals_input_rejected(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "output_path": "/media/movies",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        with pytest.raises(SystemExit):
+            load_config(tmp_path, "boomarr.yml")
+
+    def test_output_inside_input_rejected(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "output_path": "/media/movies/filtered",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        with pytest.raises(SystemExit):
+            load_config(tmp_path, "boomarr.yml")
+
+    def test_input_inside_output_rejected(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies/subset",
+                    "output_path": "/media/movies",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        with pytest.raises(SystemExit):
+            load_config(tmp_path, "boomarr.yml")
+
+    def test_siblings_accepted(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "output_path": "/media/filtered",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        config = load_config(tmp_path, "boomarr.yml")
+        assert len(config.libraries) == 1
+
+    def test_symlink_library_output_overlap_rejected(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "output_path": "/media/filtered",
+                    "symlink_libraries": [
+                        {
+                            "output_path": "/media/movies/links",
+                            "filters": [
+                                {"type": "audio_language", "languages": ["de"]}
+                            ],
+                        },
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        with pytest.raises(SystemExit):
+            load_config(tmp_path, "boomarr.yml")
+
+    def test_global_output_inside_input_rejected(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "boomarr.yml"
+        data = {
+            "output_path": "/media/movies/filtered",
+            "libraries": [
+                {
+                    "name": "Movies",
+                    "input_path": "/media/movies",
+                    "symlink_libraries": [
+                        {"filters": [{"type": "audio_language", "languages": ["de"]}]},
+                    ],
+                },
+            ],
+        }
+        config_file.write_text(yaml.dump(data), encoding="utf-8")
+        with pytest.raises(SystemExit):
+            load_config(tmp_path, "boomarr.yml")

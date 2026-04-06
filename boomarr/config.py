@@ -505,6 +505,66 @@ class Config(BaseModel):
                 )
         return self
 
+    @model_validator(mode="after")
+    def _validate_no_path_overlap(self) -> "Config":
+        """Ensure no output path equals, contains, or is inside any input path.
+
+        Catches dangerous misconfigurations where symlink operations could
+        interfere with original media files or cause recursive symlink loops.
+        """
+        for lib in self.libraries:
+            input_path = lib.input_path
+
+            # Collect all effective output paths for this library
+            base_output = (
+                lib.output_path if lib.output_path is not None else self.output_path
+            )
+            output_paths: list[tuple[str, Path]] = []
+            if base_output is not None:
+                output_paths.append(("base output", base_output))
+            for sym_lib in lib.symlink_libraries:
+                if sym_lib.output_path is not None:
+                    output_paths.append(("symlink library output", sym_lib.output_path))
+
+            for label, output_path in output_paths:
+                _check_path_overlap(input_path, output_path, lib.name, label)
+
+        return self
+
+
+def _check_path_overlap(
+    input_path: Path, output_path: Path, lib_name: str, label: str
+) -> None:
+    """Raise ValueError if input and output paths overlap.
+
+    Checks three conditions:
+    1. output == input (same directory)
+    2. output is inside input (would cause recursive scanning)
+    3. input is inside output (symlink cleanup could affect source)
+    """
+    try:
+        output_path.relative_to(input_path)
+        raise ValueError(
+            f"Library '{lib_name}': {label} '{output_path}' is inside "
+            f"input_path '{input_path}'. Output paths must not overlap "
+            f"with input paths to prevent recursive symlink loops or "
+            f"accidental data loss."
+        )
+    except ValueError as exc:
+        if "inside" in str(exc):
+            raise
+    try:
+        input_path.relative_to(output_path)
+        raise ValueError(
+            f"Library '{lib_name}': input_path '{input_path}' is inside "
+            f"{label} '{output_path}'. Output paths must not overlap "
+            f"with input paths to prevent accidental modification of "
+            f"source files during cleanup."
+        )
+    except ValueError as exc:
+        if "inside" in str(exc):
+            raise
+
 
 _config: Config | None = None
 

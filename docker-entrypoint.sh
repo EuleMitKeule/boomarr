@@ -17,7 +17,7 @@ chown -R boomarr:boomarr /app "$CONFIG_DIR"
 
 boomarr paths --config-dir "$CONFIG_DIR" 2>/dev/null | while IFS= read -r dir; do
     mkdir -p "$dir"
-    chown -R boomarr:boomarr "$dir"
+    chown boomarr:boomarr "$dir"
 done
 
 exec gosu boomarr "$@"

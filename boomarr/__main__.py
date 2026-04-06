@@ -87,9 +87,9 @@ LogFileNameOpt = Annotated[
 SkipReadonlyCheckOpt = Annotated[
     bool,
     typer.Option(
-        "--skip-readonly-check",
+        "--dangerous-skip-readonly-check",
         envvar=ENV_SKIP_READONLY_CHECK,
-        help="Skip the source directory read-only check. For development only — never use in production.",
+        help="DANGEROUS: Skip the source directory read-only check. For development only — never use in production.",
     ),
 ]
 
@@ -120,8 +120,8 @@ def verify_source_dirs_readonly(
     Source directories must be mounted read-only to guarantee that Boomarr
     can never accidentally modify the original media files.
 
-    Pass ``skip=True`` (via ``--skip-readonly-check`` or the
-    ``SKIP_READONLY_CHECK`` env var) to bypass this check during development.
+    Pass ``skip=True`` (via ``--dangerous-skip-readonly-check`` or the
+    ``DANGEROUS_SKIP_READONLY_CHECK`` env var) to bypass this check during development.
 
     Exits with code 1 if any existing source directory is writable.
     """
