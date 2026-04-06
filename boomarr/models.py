@@ -48,11 +48,19 @@ class ScanResult:
     removed: int = 0
     unchanged: int = 0
     skipped: int = 0
+    filtered: int = 0
     errors: int = 0
 
     @property
     def total(self) -> int:
-        return self.created + self.removed + self.unchanged + self.skipped + self.errors
+        return (
+            self.created
+            + self.removed
+            + self.unchanged
+            + self.skipped
+            + self.filtered
+            + self.errors
+        )
 
     def merge(self, other: ScanResult) -> ScanResult:
         """Merge another result into this one, returning self for chaining."""
@@ -60,5 +68,6 @@ class ScanResult:
         self.removed += other.removed
         self.unchanged += other.unchanged
         self.skipped += other.skipped
+        self.filtered += other.filtered
         self.errors += other.errors
         return self

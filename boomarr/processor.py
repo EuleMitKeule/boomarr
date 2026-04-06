@@ -60,7 +60,8 @@ class LibraryProcessor:
         )
 
         files = self._discover_files(library.input_path)
-        _LOGGER.info("Discovered %d files in '%s'", len(files), library.name)
+        total_files = len(files)
+        _LOGGER.info("Discovered %d files in '%s'", total_files, library.name)
 
         probers = self._pipeline.probers
         pre_filters = self._pipeline.pre_probe_filters
@@ -68,8 +69,9 @@ class LibraryProcessor:
         symlinks = self._pipeline.symlinks
         state = self._pipeline.state
 
-        for file_path in files:
+        for idx, file_path in enumerate(files, 1):
             if not all(f.matches(file_path) for f in pre_filters):
+                result.filtered += 1
                 continue
 
             try:
@@ -80,6 +82,13 @@ class LibraryProcessor:
                 if state.is_unchanged(file_path, file_size, file_mtime):
                     result.skipped += 1
                     continue
+
+                _LOGGER.info(
+                    "[%d/%d] Probing '%s'",
+                    idx,
+                    total_files,
+                    file_path.name,
+                )
 
                 info = None
                 for prober in probers:
@@ -132,12 +141,13 @@ class LibraryProcessor:
 
         _LOGGER.info(
             "Library '%s' complete: %d created, %d removed, %d unchanged, "
-            "%d skipped, %d errors",
+            "%d skipped (cached), %d filtered (non-media), %d errors",
             library.name,
             result.created,
             result.removed,
             result.unchanged,
             result.skipped,
+            result.filtered,
             result.errors,
         )
         return result

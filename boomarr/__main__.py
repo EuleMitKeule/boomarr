@@ -191,11 +191,13 @@ def scan(
         total.merge(result)
 
     _LOGGER.info(
-        "Scan complete: %d created, %d removed, %d unchanged, %d skipped, %d errors",
+        "Scan complete: %d created, %d removed, %d unchanged, "
+        "%d skipped (cached), %d filtered (non-media), %d errors",
         total.created,
         total.removed,
         total.unchanged,
         total.skipped,
+        total.filtered,
         total.errors,
     )
 

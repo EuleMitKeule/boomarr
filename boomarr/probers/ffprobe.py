@@ -17,7 +17,12 @@ _FFPROBE_CMD = [
     "quiet",
     "-print_format",
     "json",
-    "-show_streams",
+    "-show_entries",
+    "stream=index,codec_type,codec_name:stream_tags=language,title",
+    "-analyzeduration",
+    "0",
+    "-probesize",
+    "5000000",
 ]
 
 

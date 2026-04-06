@@ -142,15 +142,18 @@ class TestAudioLanguageFilter:
 class TestScanResult:
     def test_merge(self) -> None:
         a = ScanResult(created=1, removed=2)
-        b = ScanResult(created=3, errors=1)
+        b = ScanResult(created=3, errors=1, filtered=5)
         a.merge(b)
         assert a.created == 4
         assert a.removed == 2
         assert a.errors == 1
+        assert a.filtered == 5
 
     def test_total(self) -> None:
-        r = ScanResult(created=1, removed=2, unchanged=3, skipped=4, errors=5)
-        assert r.total == 15
+        r = ScanResult(
+            created=1, removed=2, unchanged=3, skipped=4, filtered=6, errors=5
+        )
+        assert r.total == 21
 
 
 class TestInMemoryStateStore:
@@ -881,7 +884,8 @@ class TestLibraryProcessorOrchestration:
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(library)
         # Pre-probe filter rejects, so prober should not be called
-        assert result.total == 0
+        assert result.filtered == 1
+        assert result.created == 0
 
     def test_state_updated_after_processing(self, tmp_path: Path) -> None:
         """State store should be updated after a file is processed."""
