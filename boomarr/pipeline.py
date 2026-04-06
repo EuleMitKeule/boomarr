@@ -144,13 +144,18 @@ class PipelineFactory:
         """Build a single post-probe filter instance from its config."""
         match config.type:
             case PostProbeFilterType.AUDIO_LANGUAGE:
-                languages = getattr(config, "languages", None)
-                if not languages:
+                lang_entries = getattr(config, "languages", None)
+                if not lang_entries:
                     raise ValueError(
                         "audio_language filter requires a 'languages' list"
                     )
+                canonical = [entry.code for entry in lang_entries]
+                aliases = {
+                    entry.code: entry.aliases for entry in lang_entries if entry.aliases
+                }
                 return AudioLanguageFilter(
-                    languages=languages,
+                    languages=canonical,
+                    aliases=aliases,
                     suffix=config.suffix,
                 )
             case _:

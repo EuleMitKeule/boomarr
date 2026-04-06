@@ -11,6 +11,7 @@ from boomarr.config import (
     AudioLanguageFilterConfig,
     Config,
     GeneralConfig,
+    LanguageEntry,
     LibraryConfig,
     LoggingConfig,
     PostProbeFilterConfig,
@@ -50,7 +51,7 @@ def _make_library(tmp_path: Path) -> LibraryConfig:
         symlink_libraries=[
             SymlinkLibraryConfig(
                 filters=[
-                    AudioLanguageFilterConfig(languages=["de"]),
+                    AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                 ],
             ),
         ],
@@ -137,6 +138,28 @@ class TestAudioLanguageFilter:
     def test_suffix_falls_back_to_default(self) -> None:
         f = AudioLanguageFilter(languages=["de"])
         assert f.suffix == "de"
+
+    def test_alias_matches(self) -> None:
+        f = AudioLanguageFilter(languages=["deu"], aliases={"deu": ["ger"]})
+        info = MediaInfo(
+            file_path=Path("/m.mkv"),
+            audio_tracks=[AudioTrack(index=0, language="ger", codec="aac")],
+        )
+        assert f.matches(info) is True
+
+    def test_alias_suffix_unchanged(self) -> None:
+        """Aliases must not appear in the suffix."""
+        f = AudioLanguageFilter(languages=["deu"], aliases={"deu": ["ger"]})
+        assert f.suffix == "deu"
+
+    def test_alias_for_unconfigured_language_ignored(self) -> None:
+        """Aliases only expand languages that are actually configured."""
+        f = AudioLanguageFilter(languages=["eng"], aliases={"deu": ["ger"]})
+        info = MediaInfo(
+            file_path=Path("/m.mkv"),
+            audio_tracks=[AudioTrack(index=0, language="ger", codec="aac")],
+        )
+        assert f.matches(info) is False
 
 
 class TestScanResult:
@@ -337,7 +360,7 @@ class TestPipelineFactory:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -356,7 +379,7 @@ class TestPipelineFactory:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -375,7 +398,7 @@ class TestPipelineFactory:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -396,7 +419,7 @@ class TestPipelineFactory:
                 SymlinkLibraryConfig(
                     name="german",
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -416,7 +439,7 @@ class TestPipelineFactory:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -437,7 +460,7 @@ class TestPipelineFactory:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -456,7 +479,7 @@ class TestPipelineFactory:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -580,7 +603,7 @@ class TestLibraryProcessorOrchestration:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -1014,7 +1037,7 @@ class TestPipelineFactoryExtended:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -1034,7 +1057,7 @@ class TestPipelineFactoryExtended:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -1055,7 +1078,7 @@ class TestPipelineFactoryExtended:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -1093,7 +1116,7 @@ class TestPipelineFactoryExtended:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                     output_path=Path("/custom/output"),
                 ),
@@ -1122,7 +1145,7 @@ class TestPipelineFactoryExtended:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],
@@ -1149,7 +1172,7 @@ class TestPipelineFactoryExtended:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                 ),
             ],

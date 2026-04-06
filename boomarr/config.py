@@ -244,17 +244,34 @@ class PostProbeFilterConfig(BaseModel):
     suffix: str | None = None
 
 
+class LanguageEntry(BaseModel):
+    """A language code with optional alias codes that also match."""
+
+    code: str
+    aliases: list[str] = Field(default_factory=list)
+
+
 class AudioLanguageFilterConfig(PostProbeFilterConfig):
     """Configuration for the audio-language post-probe filter."""
 
     type: Literal[PostProbeFilterType.AUDIO_LANGUAGE] = (
         PostProbeFilterType.AUDIO_LANGUAGE
     )
-    languages: list[str]
+    languages: list[LanguageEntry]
+
+    @field_validator("languages", mode="before")
+    @classmethod
+    def _coerce_language_entries(cls, v: object) -> object:
+        """Allow plain strings as shorthand for ``{code: str}``."""
+        if isinstance(v, list):
+            return [{"code": item} if isinstance(item, str) else item for item in v]
+        return v
 
     @field_validator("languages", mode="after")
     @classmethod
-    def _validate_languages_not_empty(cls, v: list[str]) -> list[str]:
+    def _validate_languages_not_empty(
+        cls, v: list[LanguageEntry]
+    ) -> list[LanguageEntry]:
         if not v:
             raise ValueError("at least one language is required")
         return v

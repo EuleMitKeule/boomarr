@@ -8,6 +8,7 @@ import pytest
 from boomarr.__main__ import verify_source_dirs_readonly
 from boomarr.config import (
     AudioLanguageFilterConfig,
+    LanguageEntry,
     LibraryConfig,
     SymlinkLibraryConfig,
 )
@@ -21,7 +22,7 @@ def _make_library(input_path: Path, output_path: Path) -> LibraryConfig:
         symlink_libraries=[
             SymlinkLibraryConfig(
                 filters=[
-                    AudioLanguageFilterConfig(languages=["de"]),
+                    AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                 ],
             ),
         ],

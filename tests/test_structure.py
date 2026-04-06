@@ -18,6 +18,7 @@ import pytest
 
 from boomarr.config import (
     AudioLanguageFilterConfig,
+    LanguageEntry,
     LibraryConfig,
     SymlinkLibraryConfig,
 )
@@ -214,7 +215,11 @@ def _make_library(input_dir: Path, output_dir: Path) -> LibraryConfig:
         input_path=input_dir,
         output_path=output_dir,
         symlink_libraries=[
-            SymlinkLibraryConfig(filters=[AudioLanguageFilterConfig(languages=["de"])])
+            SymlinkLibraryConfig(
+                filters=[
+                    AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")])
+                ]
+            )
         ],
     )
 
@@ -514,10 +519,14 @@ class TestMultiSeasonFiltering:
             output_path=tmp_path / "output",
             symlink_libraries=[
                 SymlinkLibraryConfig(
-                    filters=[AudioLanguageFilterConfig(languages=["de"])]
+                    filters=[
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")])
+                    ]
                 ),
                 SymlinkLibraryConfig(
-                    filters=[AudioLanguageFilterConfig(languages=["en"])]
+                    filters=[
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="en")])
+                    ]
                 ),
             ],
         )
@@ -581,10 +590,14 @@ class TestMultiSeasonFiltering:
             output_path=tmp_path / "output",
             symlink_libraries=[
                 SymlinkLibraryConfig(
-                    filters=[AudioLanguageFilterConfig(languages=["de"])]
+                    filters=[
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")])
+                    ]
                 ),
                 SymlinkLibraryConfig(
-                    filters=[AudioLanguageFilterConfig(languages=["en"])]
+                    filters=[
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="en")])
+                    ]
                 ),
             ],
         )

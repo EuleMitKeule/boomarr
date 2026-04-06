@@ -10,6 +10,7 @@ from boomarr.config import (
     AudioLanguageFilterConfig,
     FFProbeProberConfig,
     FileExtensionFilterConfig,
+    LanguageEntry,
     LibraryConfig,
     PostProbeFilterType,
     PreProbeFilterType,
@@ -19,12 +20,12 @@ from boomarr.config import (
 )
 
 
-def _sym_lib(languages: list[str] | None = None) -> SymlinkLibraryConfig:
+def _sym_lib(languages: list[LanguageEntry] | None = None) -> SymlinkLibraryConfig:
     """Build a minimal SymlinkLibraryConfig for testing."""
     return SymlinkLibraryConfig(
         filters=[
             AudioLanguageFilterConfig(
-                languages=languages or ["de"],
+                languages=languages or [LanguageEntry(code="de")],
             ),
         ],
     )
@@ -38,7 +39,9 @@ class TestLibraryConfig:
             name="Movies",
             input_path=Path("/media/movies"),
             output_path=Path("/filtered/movies"),
-            symlink_libraries=[_sym_lib(["de", "en"])],
+            symlink_libraries=[
+                _sym_lib([LanguageEntry(code="de"), LanguageEntry(code="en")])
+            ],
         )
         assert lib.name == "Movies"
         assert len(lib.symlink_libraries) == 1
@@ -106,7 +109,7 @@ class TestLibraryConfig:
             symlink_libraries=[
                 SymlinkLibraryConfig(
                     filters=[
-                        AudioLanguageFilterConfig(languages=["de"]),
+                        AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")]),
                     ],
                     output_path=Path("custom_output"),
                 ),
@@ -119,7 +122,7 @@ class TestLibraryConfig:
         """Explicitly passing output_path=None should keep it None (line 270)."""
         sym = SymlinkLibraryConfig(
             output_path=None,
-            filters=[AudioLanguageFilterConfig(languages=["de"])],
+            filters=[AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")])],
         )
         assert sym.output_path is None
 
@@ -128,16 +131,38 @@ class TestPostProbeFilterConfig:
     """Tests for PostProbeFilterConfig and AudioLanguageFilterConfig."""
 
     def test_audio_language_fields_stored(self) -> None:
-        config = AudioLanguageFilterConfig(languages=["de", "en"])
+        config = AudioLanguageFilterConfig(
+            languages=[LanguageEntry(code="de"), LanguageEntry(code="en")]
+        )
         assert config.type == PostProbeFilterType.AUDIO_LANGUAGE
-        assert config.languages == ["de", "en"]
+        assert [e.code for e in config.languages] == ["de", "en"]
+
+    def test_language_plain_string_coerced(self) -> None:
+        config = AudioLanguageFilterConfig.model_validate({"languages": ["deu"]})
+        assert config.languages == [LanguageEntry(code="deu")]
+
+    def test_language_with_aliases(self) -> None:
+        config = AudioLanguageFilterConfig(
+            languages=[LanguageEntry(code="deu", aliases=["ger"])]
+        )
+        assert config.languages[0].code == "deu"
+        assert config.languages[0].aliases == ["ger"]
+
+    def test_language_with_aliases_via_dict_coercion(self) -> None:
+        config = AudioLanguageFilterConfig.model_validate(
+            {"languages": [{"code": "deu", "aliases": ["ger"]}]}
+        )
+        assert config.languages[0].code == "deu"
+        assert config.languages[0].aliases == ["ger"]
 
     def test_suffix_optional(self) -> None:
-        config = AudioLanguageFilterConfig(languages=["de"])
+        config = AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")])
         assert config.suffix is None
 
     def test_suffix_set(self) -> None:
-        config = AudioLanguageFilterConfig(languages=["de"], suffix="german")
+        config = AudioLanguageFilterConfig(
+            languages=[LanguageEntry(code="de")], suffix="german"
+        )
         assert config.suffix == "german"
 
     def test_audio_language_requires_at_least_one_language(self) -> None:
@@ -161,7 +186,7 @@ class TestPostProbeFilterConfig:
     def test_symlink_library_name_stored(self) -> None:
         lib = SymlinkLibraryConfig(
             name="german",
-            filters=[AudioLanguageFilterConfig(languages=["de"])],
+            filters=[AudioLanguageFilterConfig(languages=[LanguageEntry(code="de")])],
         )
         assert lib.name == "german"
 
