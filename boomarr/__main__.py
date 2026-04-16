@@ -33,6 +33,7 @@ from boomarr.log import setup_logging
 from boomarr.models import ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
+from boomarr.state import SQLiteStateStore, StateStore
 from boomarr.watcher import Watcher
 
 _LOGGER = logging.getLogger(APP_NAME)
@@ -111,6 +112,55 @@ def _init_config(
     return config
 
 
+def _clean_symlinks_on_reset(state: StateStore, config: Config) -> None:
+    """Remove all symlinks in output paths when the state store was reset.
+
+    Called after building the state store.  If the store was freshly reset
+    (schema migration or corruption), every configured symlink output
+    directory is walked and all symlinks are deleted so that the next scan
+    rebuilds them from scratch.
+    """
+    if not isinstance(state, SQLiteStateStore) or not state.was_reset:
+        return
+
+    total_removed = 0
+
+    for library in config.libraries:
+        base_output = (
+            library.output_path
+            if library.output_path is not None
+            else config.output_path
+        )
+        for sym_lib in library.symlink_libraries:
+            if sym_lib.output_path is not None:
+                output_path = sym_lib.output_path
+            elif sym_lib.name is not None and base_output is not None:
+                output_path = base_output / sym_lib.name
+            elif base_output is not None:
+                lib_slug = library.name.lower().replace(" ", "-")
+                combined_suffix = "-".join(
+                    f.suffix for f in sym_lib.filters if f.suffix is not None
+                )
+                output_path = base_output / f"{lib_slug}-{combined_suffix}"
+            else:
+                continue
+
+            if not output_path.is_dir():
+                continue
+
+            for path in list(output_path.rglob("*")):
+                if path.is_symlink():
+                    _LOGGER.warning("Removing symlink after state reset: %s", path)
+                    path.unlink()
+                    total_removed += 1
+
+    if total_removed:
+        _LOGGER.warning(
+            "State reset: removed %d symlinks from output directories",
+            total_removed,
+        )
+
+
 def verify_source_dirs_readonly(
     libraries: list[LibraryConfig], *, skip: bool = False
 ) -> None:
@@ -181,7 +231,9 @@ def scan(
 
     verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
 
-    factory = PipelineFactory(state=PipelineFactory.build_state_store(config))
+    state = PipelineFactory.build_state_store(config)
+    _clean_symlinks_on_reset(state, config)
+    factory = PipelineFactory(state=state)
     total = ScanResult()
 
     for library in config.libraries:
@@ -233,6 +285,7 @@ def watch(
 
     triggers = PipelineFactory.build_triggers(config.triggers)
     state = PipelineFactory.build_state_store(config)
+    _clean_symlinks_on_reset(state, config)
     factory = PipelineFactory(state=state)
 
     def scan_all() -> ScanResult:

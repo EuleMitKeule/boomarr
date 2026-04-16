@@ -41,16 +41,21 @@ class LibraryProcessor:
         """Run the full scan pipeline on a single library.
 
         Steps:
-            1. Discover all files under input_path
-            2. For each file:
-               a. Apply pre-probe filters (e.g. file extension) — skip on fail
-               b. Probe metadata via fallback prober chain
-               c. Check state — skip if unchanged
-               d. For each symlink library:
-                  - Apply post-probe filters (e.g. audio language)
-                  - Create or remove symlink accordingly
-               e. Update state
-            3. Clean stale symlinks in each symlink library output
+            Phase 1 – Preprocessing (no ffprobe):
+                1. Discover all files under input_path
+                2. Apply pre-probe filters (e.g. extension) → count filtered
+                3. Check state for unchanged files → count skipped
+                4. Collect remaining files into a to_probe list
+
+            Phase 2 – Probing:
+                1. Iterate over to_probe with progress counter
+                2. Run ffprobe fallback chain, handle errors
+                3. Apply post-probe filters, manage symlinks
+                4. Update state
+
+            Phase 3 – Cleanup:
+                1. Clean stale symlinks in each symlink library output
+                2. Log final stats summary
         """
         result = ScanResult()
         _LOGGER.info(
@@ -69,7 +74,9 @@ class LibraryProcessor:
         symlinks = self._pipeline.symlinks
         state = self._pipeline.state
 
-        for idx, file_path in enumerate(files, 1):
+        # Phase 1 – Preprocessing: filter and check state without probing
+        to_probe: list[tuple[Path, int, float]] = []
+        for file_path in files:
             if not all(f.matches(file_path) for f in pre_filters):
                 result.filtered += 1
                 continue
@@ -78,15 +85,25 @@ class LibraryProcessor:
                 stat = file_path.stat()
                 file_size = stat.st_size
                 file_mtime = stat.st_mtime
+            except Exception as e:
+                _LOGGER.exception("Error processing '%s': %s", file_path, e)
+                result.errors += 1
+                continue
 
-                if state.is_unchanged(file_path, file_size, file_mtime):
-                    result.skipped += 1
-                    continue
+            if state.is_unchanged(file_path, file_size, file_mtime):
+                result.skipped += 1
+                continue
 
+            to_probe.append((file_path, file_size, file_mtime))
+
+        # Phase 2 – Probing: only files that passed preprocessing
+        total = len(to_probe)
+        for idx, (file_path, file_size, file_mtime) in enumerate(to_probe, 1):
+            try:
                 _LOGGER.info(
                     "[%d/%d] Probing '%s'",
                     idx,
-                    total_files,
+                    total,
                     file_path.name,
                 )
 
@@ -129,6 +146,7 @@ class LibraryProcessor:
                 _LOGGER.exception("Error processing '%s': %s", file_path, e)
                 result.errors += 1
 
+        # Phase 3 – Cleanup
         for sym_lib in sym_libs:
             stale = symlinks.clean_stale(sym_lib.output_path)
             result.removed += stale

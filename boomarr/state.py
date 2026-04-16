@@ -15,6 +15,8 @@ from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
+SCHEMA_VERSION: int = 2
+
 
 class StateStore(abc.ABC):
     """Persistent store tracking which files have been processed."""
@@ -109,11 +111,42 @@ class SQLiteStateStore(StateStore):
         self._hits: int = 0
         self._misses: int = 0
         self._lock = threading.Lock()
+        self._was_reset: bool = False
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = self._open_or_reset(db_path)
         self._conn.executescript(_CREATE_TABLE_SQL)
         self._conn.commit()
+        self._check_schema_version()
         _LOGGER.debug("SQLiteStateStore opened: %s", db_path)
+
+    def _check_schema_version(self) -> None:
+        """Verify the schema version and reset the database if it doesn't match."""
+        row = self._conn.execute("PRAGMA user_version").fetchone()
+        current_version = row[0] if row else 0
+        if current_version != SCHEMA_VERSION:
+            _LOGGER.warning(
+                "Database schema version mismatch (got %d, expected %d), resetting",
+                current_version,
+                SCHEMA_VERSION,
+            )
+            self._conn.close()
+            self._db_path.unlink(missing_ok=True)
+            self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.executescript(_CREATE_TABLE_SQL)
+            self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            self._conn.commit()
+            self._was_reset = True
+
+    @property
+    def db_path(self) -> Path:
+        """Return the path to the underlying database file."""
+        return self._db_path
+
+    @property
+    def was_reset(self) -> bool:
+        """Return True if the database was reset during initialisation."""
+        return self._was_reset
 
     def _open_or_reset(self, db_path: Path) -> sqlite3.Connection:
         """Open the database, running an integrity check.
@@ -136,6 +169,7 @@ class SQLiteStateStore(StateStore):
             db_path.unlink(missing_ok=True)
             conn = sqlite3.connect(str(db_path), check_same_thread=False)
             conn.execute("PRAGMA journal_mode=WAL")
+            self._was_reset = True
             return conn
 
     def is_unchanged(self, file: Path, size: int, mtime: float) -> bool:
@@ -174,6 +208,12 @@ class SQLiteStateStore(StateStore):
         """Close the underlying database connection."""
         with self._lock:
             self._conn.close()
+
+    def reset(self) -> None:
+        """Close the connection, delete the DB file, and reinitialise."""
+        self.close()
+        self._db_path.unlink(missing_ok=True)
+        self.__init__(self._db_path)  # type: ignore[misc]
 
     def get_stats(self) -> dict[str, Any]:
         with self._lock:

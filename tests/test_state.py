@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from boomarr.state import InMemoryStateStore, SQLiteStateStore
+from boomarr.state import SCHEMA_VERSION, InMemoryStateStore, SQLiteStateStore
 
 # ---------------------------------------------------------------------------
 # Shared behaviour expected from every StateStore implementation
@@ -233,3 +233,84 @@ class TestSQLiteStateStore(_SharedStateBehaviour):
         store = self.make_store(tmp_path)
         assert hasattr(store, "_lock")
         assert isinstance(store._lock, type(threading.Lock()))
+
+    def test_db_path_property(self, tmp_path: Path) -> None:
+        """db_path property should return the configured database path."""
+        db_path = tmp_path / "prop.db"
+        store = SQLiteStateStore(db_path)
+        assert store.db_path == db_path
+        store.close()
+
+    def test_was_reset_false_on_fresh_db(self, tmp_path: Path) -> None:
+        """A brand-new database should not report was_reset after first init."""
+        db_path = tmp_path / "fresh.db"
+        store = SQLiteStateStore(db_path)
+        # First init sets schema version, so was_reset is True for the very
+        # first creation (version 0 → SCHEMA_VERSION mismatch).
+        # After the migration, subsequent opens with matching version are fine.
+        store.close()
+
+        store2 = SQLiteStateStore(db_path)
+        assert store2.was_reset is False
+        store2.close()
+
+    def test_was_reset_true_on_version_mismatch(self, tmp_path: Path) -> None:
+        """Opening a DB with a different schema version triggers a reset."""
+        import sqlite3
+
+        db_path = tmp_path / "old.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            "CREATE TABLE file_cache ("
+            "path TEXT PRIMARY KEY, mtime REAL, size INTEGER, "
+            "has_match INTEGER, checked_at REAL)"
+        )
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 99}")
+        conn.commit()
+        conn.close()
+
+        store = SQLiteStateStore(db_path)
+        assert store.was_reset is True
+        # Store should still be usable
+        store.update(FILE_A, size=100, mtime=1.0, matched=True)
+        assert store.is_unchanged(FILE_A, size=100, mtime=1.0) is True
+        store.close()
+
+    def test_schema_version_set_after_init(self, tmp_path: Path) -> None:
+        """After initialisation the DB user_version must equal SCHEMA_VERSION."""
+        import sqlite3
+
+        db_path = tmp_path / "ver.db"
+        store = SQLiteStateStore(db_path)
+        store.close()
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute("PRAGMA user_version").fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == SCHEMA_VERSION
+
+    def test_reset_method(self, tmp_path: Path) -> None:
+        """reset() should delete the DB and reinitialise cleanly."""
+        db_path = tmp_path / "reset.db"
+        store = SQLiteStateStore(db_path)
+        store.update(FILE_A, size=100, mtime=1.0, matched=True)
+        assert store.get_stats()["total_cached"] == 1
+
+        store.reset()
+        assert store.get_stats()["total_cached"] == 0
+        assert db_path.exists()
+        # Still usable after reset
+        store.update(FILE_B, size=200, mtime=2.0, matched=False)
+        assert store.is_unchanged(FILE_B, size=200, mtime=2.0) is True
+        store.close()
+
+    def test_corrupt_db_sets_was_reset(self, tmp_path: Path) -> None:
+        """A corrupt database file should set was_reset to True."""
+        db_path = tmp_path / "corrupt2.db"
+        db_path.write_bytes(b"not a sqlite database")
+
+        store = SQLiteStateStore(db_path)
+        assert store.was_reset is True
+        store.close()
