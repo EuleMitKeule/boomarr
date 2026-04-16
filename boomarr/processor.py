@@ -38,25 +38,7 @@ class LibraryProcessor:
         return sorted(p for p in input_path.rglob("*") if p.is_file())
 
     def process_library(self, library: LibraryConfig) -> ScanResult:
-        """Run the full scan pipeline on a single library.
-
-        Steps:
-            Phase 1 – Preprocessing (no ffprobe):
-                1. Discover all files under input_path
-                2. Apply pre-probe filters (e.g. extension) → count filtered
-                3. Check state for unchanged files → count skipped
-                4. Collect remaining files into a to_probe list
-
-            Phase 2 – Probing:
-                1. Iterate over to_probe with progress counter
-                2. Run ffprobe fallback chain, handle errors
-                3. Apply post-probe filters, manage symlinks
-                4. Update state
-
-            Phase 3 – Cleanup:
-                1. Clean stale symlinks in each symlink library output
-                2. Log final stats summary
-        """
+        """Run the full scan pipeline on a single library."""
         result = ScanResult()
         _LOGGER.info(
             "Processing library '%s': %s",

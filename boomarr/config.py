@@ -736,7 +736,6 @@ def load_config(
     database_raw = yaml_data.get(CONF_DATABASE)
     resolved_config_dir = config_dir.resolve()
     if database_raw is None:
-        # Default: sqlite stored alongside the config file
         extra_fields[CONF_DATABASE] = {
             "type": DatabaseType.SQLITE,
             "dir": str(resolved_config_dir),
