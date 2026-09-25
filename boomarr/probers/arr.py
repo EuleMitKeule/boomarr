@@ -39,9 +39,11 @@ def _parse_languages(raw: object) -> list[str]:
 
 def _parse_channels(raw: object) -> int | None:
     """Turn ``5.1`` / ``7.1`` / ``2`` into a channel count."""
+    if not isinstance(raw, int | float | str):
+        return None
     try:
-        value = float(raw)  # type: ignore[arg-type]
-    except TypeError, ValueError:
+        value = float(raw)
+    except ValueError:
         return None
     main = int(value)
     lfe = round((value - main) * 10)

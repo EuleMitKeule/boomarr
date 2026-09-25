@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -573,9 +574,9 @@ class TestLibraryProcessorOrchestration:
         library: LibraryConfig,
         prober: MediaProber,
         sym_libs: list[ResolvedSymlinkLibrary],
-        **kwargs: object,
+        **kwargs: Any,
     ) -> ScanResult:
-        pipeline = Pipeline(probers=[prober], symlink_libraries=sym_libs, **kwargs)  # type: ignore[arg-type]
+        pipeline = Pipeline(probers=[prober], symlink_libraries=sym_libs, **kwargs)
         return LibraryProcessor(pipeline).process_library(library)
 
     def test_nonexistent_input_is_skipped_with_error(self, tmp_path: Path) -> None:
@@ -1077,15 +1078,15 @@ class TestPipelineFactoryExtended:
 
     def test_unknown_prober_raises(self) -> None:
         with pytest.raises(ValidationError):
-            ProberConfig(type="nonexistent")  # type: ignore[arg-type]
+            ProberConfig(type="nonexistent")
 
     def test_unknown_pre_probe_filter_raises(self) -> None:
         with pytest.raises(ValidationError):
-            PreProbeFilterConfig(type="nonexistent")  # type: ignore[arg-type]
+            PreProbeFilterConfig(type="nonexistent")
 
     def test_unknown_post_probe_filter_raises(self) -> None:
         with pytest.raises(ValidationError):
-            PostProbeFilterConfig(type="nonexistent")  # type: ignore[arg-type]
+            PostProbeFilterConfig(type="nonexistent")
 
     def test_audio_language_filter_without_languages_raises(self) -> None:
         from boomarr.const import PostProbeFilterType
@@ -1190,7 +1191,7 @@ class TestRemovalGuard:
         )
 
     def _run(
-        self, library: LibraryConfig, out: Path, prober: StubProber, **kwargs: object
+        self, library: LibraryConfig, out: Path, prober: StubProber, **kwargs: Any
     ) -> ScanResult:
         from boomarr.models import RemovalGuard
 
@@ -1198,7 +1199,7 @@ class TestRemovalGuard:
             probers=[prober],
             symlink_libraries=[_resolved_sym_lib(out)],
             removal_guard=RemovalGuard(max_percent=50, min_count=5),
-            **kwargs,  # type: ignore[arg-type]
+            **kwargs,
         )
         return LibraryProcessor(pipeline).process_library(library)
 

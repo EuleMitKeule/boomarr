@@ -78,7 +78,7 @@ class _Arr(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def log_message(self, *args: object) -> None:
+    def log_message(self, format: str, *args: Any) -> None:
         pass
 
 

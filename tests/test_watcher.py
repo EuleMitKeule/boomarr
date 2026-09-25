@@ -4,6 +4,7 @@ import asyncio
 import threading
 import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -38,7 +39,7 @@ class TestScanEvent:
     def test_frozen(self) -> None:
         event = ScanEvent(source="a", timestamp=0.0)
         with pytest.raises(AttributeError):
-            event.source = "b"  # type: ignore[misc]
+            event.source = "b"  # ty: ignore[invalid-assignment]
 
 
 # ------------------------------------------------------------------ #
@@ -79,14 +80,14 @@ class TestScheduleTriggerConfig:
 
 
 class TestConfigTriggers:
-    def _minimal_config(self, tmp_path: Path, **kwargs: object) -> Config:
+    def _minimal_config(self, tmp_path: Path, **kwargs: Any) -> Config:
         return Config(
             config_dir=tmp_path,
             config_file="test.yml",
             general=GeneralConfig(),
             logging=LoggingConfig(),
             output_path=tmp_path / "out",
-            **kwargs,  # type: ignore[arg-type]
+            **kwargs,
         )
 
     def test_default_has_schedule_trigger(self, tmp_path: Path) -> None:

@@ -125,9 +125,11 @@ def _extract_audio_tracks(data: dict[str, Any]) -> list[AudioTrack]:
 
 
 def _int_or_none(value: object) -> int | None:
+    if not isinstance(value, int | float | str):
+        return None
     try:
-        return int(value) if value is not None else None  # type: ignore[call-overload]
-    except TypeError, ValueError:
+        return int(value)
+    except ValueError:
         return None
 
 

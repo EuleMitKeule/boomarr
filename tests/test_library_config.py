@@ -199,13 +199,13 @@ class TestPostProbeFilterConfig:
         from boomarr.config import ProberConfig
 
         with pytest.raises(ValidationError):
-            ProberConfig(type="nonexistent")  # type: ignore[arg-type]
+            ProberConfig(type="nonexistent")
 
     def test_invalid_post_probe_filter_type_rejected(self) -> None:
         from boomarr.config import PostProbeFilterConfig
 
         with pytest.raises(ValidationError):
-            PostProbeFilterConfig(type="nonexistent")  # type: ignore[arg-type]
+            PostProbeFilterConfig(type="nonexistent")
 
 
 class TestConfigLibraries:

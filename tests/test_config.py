@@ -61,19 +61,19 @@ class TestLoggingConfig:
         assert cfg.log_file is None
 
     def test_level_coercion_lowercase(self) -> None:
-        cfg = LoggingConfig(level="debug")  # type: ignore[arg-type]
+        cfg = LoggingConfig(level="debug")
         assert cfg.level == LogLevel.DEBUG
 
     def test_level_coercion_mixed_case(self) -> None:
-        cfg = LoggingConfig(level="Warning")  # type: ignore[arg-type]
+        cfg = LoggingConfig(level="Warning")
         assert cfg.level == LogLevel.WARNING
 
     def test_empty_string_dir_becomes_none(self) -> None:
-        cfg = LoggingConfig(dir="")  # type: ignore[arg-type]
+        cfg = LoggingConfig(dir="")
         assert cfg.dir is None
 
     def test_whitespace_string_dir_becomes_none(self) -> None:
-        cfg = LoggingConfig(dir="   ")  # type: ignore[arg-type]
+        cfg = LoggingConfig(dir="   ")
         assert cfg.dir is None
 
     def test_empty_string_file_name_becomes_none(self) -> None:
@@ -82,7 +82,7 @@ class TestLoggingConfig:
 
     def test_invalid_level_raises(self) -> None:
         with pytest.raises(ValidationError):
-            LoggingConfig(level="NOTREAL")  # type: ignore[arg-type]
+            LoggingConfig(level="NOTREAL")
 
     def test_level_coercion_when_already_enum(self) -> None:
         """Test that passing non-string value (e.g., already-converted LogLevel) passes through."""
@@ -95,7 +95,7 @@ class TestLoggingConfig:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            LoggingConfig(level=123)  # type: ignore[arg-type]
+            LoggingConfig(level=123)
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ class TestGeneralConfig:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            GeneralConfig(tz=123)  # type: ignore[arg-type]
+            GeneralConfig(tz=123)
 
     def test_valid_umask(self) -> None:
         cfg = GeneralConfig(umask="077")
@@ -139,11 +139,11 @@ class TestGeneralConfig:
 
     def test_umask_int_coercion(self) -> None:
         """YAML parses unquoted 022 as int 22; should be zero-padded to '022'."""
-        cfg = GeneralConfig(umask=22)  # type: ignore[arg-type]
+        cfg = GeneralConfig(umask=22)
         assert cfg.umask == "022"
 
     def test_umask_int_single_digit(self) -> None:
-        cfg = GeneralConfig(umask=0)  # type: ignore[arg-type]
+        cfg = GeneralConfig(umask=0)
         assert cfg.umask == "000"
 
     def test_umask_invalid_octal_raises(self) -> None:
@@ -158,7 +158,7 @@ class TestGeneralConfig:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            GeneralConfig(umask=[1, 2, 3])  # type: ignore[arg-type]
+            GeneralConfig(umask=[1, 2, 3])
 
     def test_custom_puid_pgid(self) -> None:
         cfg = GeneralConfig(puid=500, pgid=600)

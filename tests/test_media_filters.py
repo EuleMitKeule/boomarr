@@ -1,6 +1,7 @@
 """Tests for resolution/codec/channel filters, invert and richer probe data."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -85,9 +86,9 @@ class TestResolutionFilter:
             ({"min_height": 720, "max_height": 1080}, "720p-1080p"),
         ],
     )
-    def test_suffix(self, kwargs: dict[str, int], suffix: str) -> None:
-        assert ResolutionFilter(**kwargs).suffix == suffix  # type: ignore[arg-type]
-        cfg = ResolutionFilterConfig(**kwargs)  # type: ignore[arg-type]
+    def test_suffix(self, kwargs: dict[str, Any], suffix: str) -> None:
+        assert ResolutionFilter(**kwargs).suffix == suffix
+        cfg = ResolutionFilterConfig(**kwargs)
         assert cfg.effective_suffix() == suffix
 
 
