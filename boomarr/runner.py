@@ -22,6 +22,8 @@ from boomarr.processor import LibraryProcessor
 
 _LOGGER = logging.getLogger(__name__)
 
+LAST_SCAN_KEY = "last_scan"
+
 
 @dataclass(frozen=True)
 class ScanReport:
@@ -126,6 +128,7 @@ class ScanRunner:
                 self._running = False
             METRICS.record_scan(result, duration, self._cache_entries())
             if not cancel.is_set():
+                self._persist(report)
                 self._run_hooks(report)
 
     def status(self) -> dict[str, Any]:
@@ -138,6 +141,15 @@ class ScanRunner:
             "running": running,
             "last_scan": last.as_dict() if last else None,
         }
+
+    def _persist(self, report: ScanReport) -> None:
+        """Remember the last real scan so ``boomarr status`` can show it."""
+        if self._dry_run:
+            return
+        try:
+            self._factory.state.set_meta(LAST_SCAN_KEY, report.as_dict())
+        except Exception:  # pragma: no cover - status info must never break scans
+            _LOGGER.exception("Could not store the last scan report")
 
     def _cache_entries(self) -> int | None:
         try:

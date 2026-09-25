@@ -11,12 +11,12 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from dotenv import load_dotenv
+from rich.console import Console
 
 from boomarr.config import Config, LibraryConfig, SQLiteDatabaseConfig, load_config
 from boomarr.const import (
@@ -43,6 +43,7 @@ from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
 from boomarr.runner import PostScanHook, ScanRunner
 from boomarr.server import HttpServer
+from boomarr.status import collect_status, render_plain, render_rich
 from boomarr.watcher import Watcher
 
 _LOGGER = logging.getLogger(APP_NAME)
@@ -398,7 +399,7 @@ def paths(
             _emit(config.symlink_library_output(library, sym_lib))
 
 
-@app.command("status", help="Show probe cache statistics.")
+@app.command("status", help="Show last scan, cache statistics, triggers and outputs.")
 def status(
     config_dir: ConfigDirOpt = DEFAULT_CONFIG_DIR,
     config_file_name: ConfigFileNameOpt = DEFAULT_CONFIG_FILE_NAME,
@@ -409,47 +410,24 @@ def status(
         bool, typer.Option("--json", help="Print machine-readable JSON.")
     ] = False,
 ) -> None:
-    """Show probe cache statistics and configured output directories."""
+    """Show the last scan, cache statistics, triggers and every output folder."""
     config = _init_config(
         config_dir, config_file_name, log_level, log_dir, log_file_name
     )
     state = PipelineFactory.build_state_store(config)
     try:
-        stats = state.get_stats()
+        data = collect_status(config, state)
     finally:
         state.close()
 
-    outputs = {
-        library.name: [
-            str(config.symlink_library_output(library, sym_lib))
-            for sym_lib in library.symlink_libraries
-        ]
-        for library in config.libraries
-    }
     if as_json:
-        typer.echo(json.dumps({**stats, "outputs": outputs}, indent=2))
+        typer.echo(json.dumps(data, indent=2, default=str))
         return
-
-    last = stats.get("last_probe_time")
-    last_str = (
-        datetime.fromtimestamp(last).isoformat(sep=" ", timespec="seconds")
-        if last
-        else "never"
-    )
-    typer.echo(f"Boomarr {VERSION}")
-    typer.echo(f"Cached files:     {stats.get('total_cached', 0)}")
-    typer.echo(f"Without audio:    {stats.get('without_audio', 0)}")
-    typer.echo(f"Last probe:       {last_str}")
-    languages = stats.get("languages") or {}
-    if languages:
-        top = ", ".join(
-            f"{lang} ({count})" for lang, count in list(languages.items())[:10]
-        )
-        typer.echo(f"Audio languages:  {top}")
-    for name, paths in outputs.items():
-        typer.echo(f"Library '{name}':")
-        for path in paths:
-            typer.echo(f"  -> {path}")
+    console = Console()
+    if console.is_terminal:
+        render_rich(data, console)
+    else:
+        typer.echo(render_plain(data))
 
 
 @app.command(

@@ -75,7 +75,7 @@ Boomarr is designed so that it cannot damage your media or your libraries:
 | `boomarr watch` | Run continuously, scanning on every trigger (Docker default). |
 | `boomarr scan [--dry-run] [--force]` | One full scan, then exit. `--force` bypasses the removal guard once. |
 | `boomarr clean` | Only remove broken symlinks. |
-| `boomarr status [--json]` | Probe cache statistics, languages found, output folders. |
+| `boomarr status [--json]` | Last scan (time, duration, result), probe cache statistics and languages found, active triggers, and for every output folder its link count and filters. Tables in a terminal, plain text when piped. |
 | `boomarr paths` | Print writable directories (used by the Docker entrypoint). |
 | `boomarr healthcheck` | Exit 0 if `watch` is alive (Docker/Kubernetes). |
 | `boomarr version` | Print the version. |

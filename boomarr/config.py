@@ -335,6 +335,16 @@ class PostProbeFilterConfig(_ConfigModel):
         """Return the suffix derived from the filter settings."""
         return self.type.value
 
+    def describe(self) -> str:
+        """Return a short human-readable description, e.g. for ``status``."""
+        details = self.model_dump(
+            mode="json", exclude={"type", "suffix"}, exclude_defaults=True
+        )
+        invert = details.pop("invert", False)
+        text = ", ".join(f"{k}={_short(v)}" for k, v in details.items())
+        prefix = "NOT " if invert else ""
+        return f"{prefix}{self.type.value}({text})"
+
 
 class LanguageEntry(_ConfigModel):
     """A language code with optional alias codes that also match."""
@@ -477,6 +487,19 @@ AnyPostProbeFilterConfig = Annotated[
     | AudioChannelsFilterConfig,
     Field(discriminator="type"),
 ]
+
+
+def _short(value: object) -> str:
+    """Compact rendering of config values for :meth:`describe`."""
+    if isinstance(value, list):
+        return "[" + ", ".join(_short(v) for v in value) + "]"
+    if isinstance(value, dict):
+        if set(value) <= {"code", "aliases"}:
+            aliases = value.get("aliases") or []
+            code = str(value.get("code"))
+            return f"{code}(+{'/'.join(aliases)})" if aliases else code
+        return "{" + ", ".join(f"{k}={_short(v)}" for k, v in value.items()) + "}"
+    return str(value)
 
 
 class TriggerConfig(_ConfigModel):
