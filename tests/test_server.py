@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 import pytest
 
 from boomarr.models import ScanEvent
-from boomarr.triggers.webhook import WebhookTrigger
+from boomarr.server import HttpServer
 
 Request = Callable[..., Awaitable[tuple[int, dict[str, object]]]]
 
@@ -43,7 +43,7 @@ def _run(
 ) -> None:
     async def main() -> None:
         queue: asyncio.Queue[ScanEvent] = asyncio.Queue()
-        trigger = WebhookTrigger(host="127.0.0.1", port=0, api_key=api_key)
+        trigger = HttpServer(host="127.0.0.1", port=0, api_key=api_key)
         await trigger.start(queue)
         try:
             await scenario(trigger.port, queue)
@@ -151,7 +151,7 @@ def test_malformed_requests(raw: bytes, expected: int) -> None:
 
 
 def test_slow_client_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("boomarr.triggers.webhook._READ_TIMEOUT", 0.2)
+    monkeypatch.setattr("boomarr.server._READ_TIMEOUT", 0.2)
 
     async def scenario(port: int, queue: asyncio.Queue[ScanEvent]) -> None:
         reader, writer = await asyncio.open_connection("127.0.0.1", port)

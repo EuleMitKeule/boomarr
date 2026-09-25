@@ -37,10 +37,12 @@ from boomarr.const import (
     VERSION,
     LogLevel,
 )
+from boomarr.hooks import build_hooks
 from boomarr.log import setup_logging
-from boomarr.models import ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
+from boomarr.runner import PostScanHook, ScanRunner
+from boomarr.server import HttpServer
 from boomarr.watcher import Watcher
 
 _LOGGER = logging.getLogger(APP_NAME)
@@ -142,23 +144,11 @@ def _heartbeat_file() -> Path:
     return Path(tempfile.gettempdir()) / DEFAULT_HEARTBEAT_FILE_NAME
 
 
-def _scan_all(
-    config: Config, factory: PipelineFactory, cancel: threading.Event
-) -> ScanResult:
-    """Process every configured library, isolating per-library failures."""
-    total = ScanResult()
-    for library in config.libraries:
-        if cancel.is_set():
-            break
-        try:
-            pipeline = factory.for_scan(config, library)
-            result = LibraryProcessor(pipeline, cancel=cancel).process_library(library)
-        except Exception:
-            _LOGGER.exception("Processing library '%s' failed", library.name)
-            total.errors += 1
-            continue
-        total.merge(result)
-    return total
+def _build_hooks(config: Config, *, dry_run: bool = False) -> list[PostScanHook]:
+    """Create the post-scan hooks (notifications, media server refreshes)."""
+    if dry_run:
+        return []
+    return build_hooks(config)
 
 
 def verify_source_dirs_readonly(
@@ -248,8 +238,11 @@ def scan(
 
     state = PipelineFactory.build_state_store(config)
     factory = PipelineFactory(state=state, dry_run=dry_run, force=force)
+    runner = ScanRunner(
+        config, factory, hooks=_build_hooks(config, dry_run=dry_run), dry_run=dry_run
+    )
     try:
-        total = _scan_all(config, factory, threading.Event())
+        total = runner.run(threading.Event())
     finally:
         state.close()
 
@@ -293,19 +286,31 @@ def watch(
         _LOGGER.warning("No libraries configured — nothing to watch")
         return
 
-    if not config.triggers:
-        _LOGGER.warning("No triggers configured — nothing to watch")
-        return
-
     _check_probers(config)
 
     triggers = PipelineFactory.build_triggers(config.triggers)
     state = PipelineFactory.build_state_store(config)
     factory = PipelineFactory(state=state)
+    runner = ScanRunner(config, factory, hooks=_build_hooks(config))
+
+    if config.server.enabled:
+        server = config.server
+        triggers.append(
+            HttpServer(
+                host=server.host,
+                port=server.port,
+                api_key=(server.api_key.get_secret_value() if server.api_key else None),
+                metrics_auth=server.metrics_auth,
+                status_provider=runner.status,
+            )
+        )
+    if not triggers:
+        _LOGGER.warning("No triggers configured — nothing to watch")
+        return
 
     watcher = Watcher(
         triggers=triggers,
-        scan_callback=lambda cancel: _scan_all(config, factory, cancel),
+        scan_callback=runner.run,
         debounce_seconds=config.watch.debounce,
         heartbeat_file=_heartbeat_file(),
     )

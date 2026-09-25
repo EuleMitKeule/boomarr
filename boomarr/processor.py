@@ -274,6 +274,7 @@ class LibraryProcessor:
         input_path = library.input_path
         expected: set[Path] = set()
         preserve: set[Path] = set()
+        created_before = result.created
 
         for file_path in media:
             sources = [file_path, *self._sidecars_for(file_path, sidecars_by_dir)]
@@ -296,6 +297,7 @@ class LibraryProcessor:
                     _LOGGER.error("Cannot create symlink '%s': %s", dest, exc)
                     result.errors += 1
 
+        result.links[str(output_path)] = len(expected)
         plan = symlinks.plan_removals(output_path, expected, input_path, preserve)
         guard = self._pipeline.removal_guard
         if (
@@ -314,9 +316,13 @@ class LibraryProcessor:
                 guard.max_percent,
             )
             result.blocked += 1
+            if result.created > created_before:
+                result.changed_outputs.add(str(output_path))
             return
         removed = symlinks.apply_removals(output_path, plan.removals)
         result.removed += removed
+        if removed or result.created > created_before:
+            result.changed_outputs.add(str(output_path))
         if removed:
             _LOGGER.info("Removed %d symlinks from '%s'", removed, output_path)
 

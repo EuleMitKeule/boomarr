@@ -53,6 +53,14 @@ class TriggerType(StrEnum):
     WEBHOOK = "webhook"
 
 
+class MediaServerType(StrEnum):
+    """Discriminator values for media server integrations."""
+
+    PLEX = "plex"
+    JELLYFIN = "jellyfin"
+    EMBY = "emby"
+
+
 class AudioLanguageMatchMode(StrEnum):
     """How the configured languages of an audio_language filter are combined."""
 
@@ -67,6 +75,8 @@ ENV_LOG_DIR = "LOG_DIR"
 ENV_LOG_FILE_NAME = "LOG_FILE_NAME"
 ENV_SKIP_READONLY_CHECK = "DANGEROUS_SKIP_READONLY_CHECK"
 ENV_WEBHOOK_API_KEY = "WEBHOOK_API_KEY"
+ENV_API_KEY = "BOOMARR_API_KEY"
+ENV_NOTIFY_URLS = "BOOMARR_NOTIFY_URLS"
 
 ENV_PREFIX_GENERAL = ""
 ENV_PREFIX_LOGGING = "LOG"

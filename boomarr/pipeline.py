@@ -57,7 +57,6 @@ from boomarr.state import InMemoryStateStore, SQLiteStateStore, StateStore
 from boomarr.symlinks import SymlinkManager
 from boomarr.triggers.base import TriggerSource
 from boomarr.triggers.schedule import ScheduleTrigger
-from boomarr.triggers.webhook import WebhookTrigger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -119,6 +118,11 @@ class PipelineFactory:
         self._dry_run = dry_run
         self._force = force
 
+    @property
+    def state(self) -> StateStore:
+        """The state store shared by all pipelines of this factory."""
+        return self._state
+
     @staticmethod
     def build_state_store(config: Config) -> StateStore:
         """Build a StateStore from the database configuration."""
@@ -141,17 +145,8 @@ class PipelineFactory:
                         )
                     )
                 case WebhookTriggerConfig():
-                    triggers.append(
-                        WebhookTrigger(
-                            host=config.host,
-                            port=config.port,
-                            api_key=(
-                                config.api_key.get_secret_value()
-                                if config.api_key is not None
-                                else None
-                            ),
-                        )
-                    )
+                    # Migrated into Config.server by validation.
+                    continue
                 case _:
                     raise ValueError(f"Unknown trigger: {config.type!r}")
         return triggers

@@ -70,6 +70,8 @@ class ScanResult:
     filtered: int = 0
     errors: int = 0
     blocked: int = 0
+    links: dict[str, int] = field(default_factory=dict)
+    changed_outputs: set[str] = field(default_factory=set)
 
     @property
     def total(self) -> int:
@@ -93,6 +95,8 @@ class ScanResult:
         self.filtered += other.filtered
         self.errors += other.errors
         self.blocked += other.blocked
+        self.links.update(other.links)
+        self.changed_outputs |= other.changed_outputs
         return self
 
 

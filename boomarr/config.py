@@ -71,6 +71,8 @@ from boomarr.const import (
     DEFAULT_WATCH_DEBOUNCE,
     DEFAULT_WEBHOOK_HOST,
     DEFAULT_WEBHOOK_PORT,
+    ENV_API_KEY,
+    ENV_NOTIFY_URLS,
     ENV_PREFIX_GENERAL,
     ENV_PREFIX_LOG_ROTATION,
     ENV_PREFIX_LOGGING,
@@ -78,6 +80,7 @@ from boomarr.const import (
     AudioLanguageMatchMode,
     DatabaseType,
     LogLevel,
+    MediaServerType,
     PostProbeFilterType,
     PreProbeFilterType,
     ProberType,
@@ -507,13 +510,32 @@ class ScheduleTriggerConfig(TriggerConfig):
         return v
 
 
-class WebhookTriggerConfig(TriggerConfig):
-    """Configuration for the HTTP webhook trigger.
+def _api_key_from_env(v: object) -> object:
+    """Fall back to ``BOOMARR_API_KEY``/``WEBHOOK_API_KEY``; empty means None."""
+    if v is None:
+        v = os.environ.get(ENV_API_KEY) or os.environ.get(ENV_WEBHOOK_API_KEY)
+    if isinstance(v, str) and not v.strip():
+        return None
+    return v
 
-    Starts a small HTTP server; any authenticated ``POST`` to
-    ``/api/v1/scan`` or ``/api/v1/webhook/<anything>`` (e.g. from
-    Sonarr/Radarr "Connect → Webhook") queues a rescan.
-    """
+
+class ServerConfig(_ConfigModel):
+    """Built-in HTTP server (watch mode): health, metrics, scan API, webhooks."""
+
+    enabled: bool = False
+    host: str = DEFAULT_WEBHOOK_HOST
+    port: int = Field(default=DEFAULT_WEBHOOK_PORT, ge=1, le=65535)
+    api_key: SecretStr | None = Field(default=None, validate_default=True)
+    metrics_auth: bool = False
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _coerce_api_key(cls, v: object) -> object:
+        return _api_key_from_env(v)
+
+
+class WebhookTriggerConfig(TriggerConfig):
+    """Deprecated alias for ``server: {enabled: true, ...}``."""
 
     type: Literal[TriggerType.WEBHOOK] = TriggerType.WEBHOOK
     host: str = DEFAULT_WEBHOOK_HOST
@@ -523,12 +545,7 @@ class WebhookTriggerConfig(TriggerConfig):
     @field_validator("api_key", mode="before")
     @classmethod
     def _coerce_empty_api_key(cls, v: object) -> object:
-        """Fall back to ``WEBHOOK_API_KEY`` so secrets can stay out of the file."""
-        if v is None:
-            v = os.environ.get(ENV_WEBHOOK_API_KEY)
-        if isinstance(v, str) and not v.strip():
-            return None
-        return v
+        return _api_key_from_env(v)
 
 
 AnyTriggerConfig = Annotated[
@@ -568,6 +585,102 @@ class RemovalGuardConfig(_ConfigModel):
         if self.max_percent >= 100:
             return None
         return RemovalGuard(max_percent=self.max_percent, min_count=self.min_count)
+
+
+class PathMapping(_ConfigModel):
+    """Translate a path prefix as Boomarr sees it into another system's view."""
+
+    local: Path
+    remote: str
+
+    def to_remote(self, path: Path) -> str | None:
+        """Return *path* translated to the remote view, or None if unmapped."""
+        if not path.is_relative_to(self.local):
+            return None
+        rel = path.relative_to(self.local).as_posix()
+        return self.remote.rstrip("/") + ("" if rel == "." else f"/{rel}")
+
+    def to_local(self, remote_path: str) -> Path | None:
+        """Return a remote path translated to Boomarr's view, or None."""
+        prefix = self.remote.rstrip("/")
+        if remote_path != prefix and not remote_path.startswith(prefix + "/"):
+            return None
+        return self.local / remote_path[len(prefix) :].lstrip("/")
+
+
+def map_to_remote(path: Path, mappings: list[PathMapping]) -> str:
+    """Apply the most specific matching mapping (identity if none matches)."""
+    for mapping in sorted(mappings, key=lambda m: len(m.local.parts), reverse=True):
+        remote = mapping.to_remote(path)
+        if remote is not None:
+            return remote
+    return str(path)
+
+
+def map_to_local(remote_path: str, mappings: list[PathMapping]) -> Path:
+    """Inverse of :func:`map_to_remote`."""
+    for mapping in sorted(mappings, key=lambda m: len(m.remote), reverse=True):
+        local = mapping.to_local(remote_path)
+        if local is not None:
+            return local
+    return Path(remote_path)
+
+
+class NotificationsConfig(_ConfigModel):
+    """Notifications via Apprise (https://github.com/caronc/apprise/wiki)."""
+
+    urls: list[SecretStr] = Field(default_factory=list, validate_default=True)
+    on_changes: bool = False
+    on_errors: bool = True
+    on_blocked: bool = True
+
+    @field_validator("urls", mode="before")
+    @classmethod
+    def _urls_from_env(cls, v: object) -> object:
+        """Fall back to the whitespace separated ``BOOMARR_NOTIFY_URLS``."""
+        if v is None or v == []:
+            env = os.environ.get(ENV_NOTIFY_URLS, "")
+            return env.split()
+        return v
+
+
+class _MediaServerConfig(_ConfigModel):
+    url: str
+    path_mappings: list[PathMapping] = Field(default_factory=list)
+    timeout: float = Field(default=10.0, gt=0)
+
+    @field_validator("url", mode="after")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("url must start with http:// or https://")
+        return v.rstrip("/")
+
+
+class PlexConfig(_MediaServerConfig):
+    """Refresh Plex library sections containing changed output folders."""
+
+    type: Literal[MediaServerType.PLEX] = MediaServerType.PLEX
+    token: SecretStr
+
+
+class JellyfinConfig(_MediaServerConfig):
+    """Notify Jellyfin about changed output folders."""
+
+    type: Literal[MediaServerType.JELLYFIN] = MediaServerType.JELLYFIN
+    api_key: SecretStr
+
+
+class EmbyConfig(_MediaServerConfig):
+    """Notify Emby about changed output folders."""
+
+    type: Literal[MediaServerType.EMBY] = MediaServerType.EMBY
+    api_key: SecretStr
+
+
+AnyMediaServerConfig = Annotated[
+    PlexConfig | JellyfinConfig | EmbyConfig, Field(discriminator="type")
+]
 
 
 class SymlinkLibraryConfig(_ConfigModel):
@@ -735,6 +848,9 @@ class Config(_ConfigModel):
     relative_symlinks: bool = False
     probe_workers: int = Field(default=DEFAULT_PROBE_WORKERS, ge=1, le=64)
     removal_guard: RemovalGuardConfig = Field(default_factory=RemovalGuardConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
+    media_servers: list[AnyMediaServerConfig] = Field(default_factory=list)
 
     _warnings: list[str] = PrivateAttr(default_factory=list)
 
@@ -838,6 +954,28 @@ class Config(_ConfigModel):
             dupes = [n for n in names if names.count(n) > 1]
             raise ValueError(f"Duplicate library names: {set(dupes)}")
         return v
+
+    @model_validator(mode="after")
+    def _migrate_webhook_trigger(self) -> Config:
+        """Turn a legacy ``type: webhook`` trigger into ``server`` settings."""
+        webhooks = [t for t in self.triggers if isinstance(t, WebhookTriggerConfig)]
+        if not webhooks:
+            return self
+        if len(webhooks) > 1:
+            raise ValueError("Only one webhook trigger is supported; use 'server'")
+        hook = webhooks[0]
+        self.triggers = [
+            t for t in self.triggers if not isinstance(t, WebhookTriggerConfig)
+        ]
+        if not self.server.enabled:
+            self.server = ServerConfig(
+                enabled=True, host=hook.host, port=hook.port, api_key=hook.api_key
+            )
+        self._warnings.append(
+            "The 'webhook' trigger is deprecated; use the 'server' section "
+            "(server: {enabled: true, port: ..., api_key: ...}) instead."
+        )
+        return self
 
     @model_validator(mode="after")
     def _validate_output_paths(self) -> Config:

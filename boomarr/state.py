@@ -88,6 +88,10 @@ class StateStore(abc.ABC):
     def get_stats(self) -> dict[str, Any]:
         """Return summary statistics for the status command."""
 
+    def count(self) -> int:
+        """Return the number of cached entries."""
+        return int(self.get_stats()["total_cached"])
+
     def close(self) -> None:  # noqa: B027 - optional hook
         """Release resources held by the store."""
 
@@ -336,6 +340,11 @@ class SQLiteStateStore(StateStore):
         """Close the underlying database connection."""
         with self._lock:
             self._conn.close()
+
+    def count(self) -> int:
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) FROM file_cache").fetchone()
+        return int(row[0])
 
     def reset(self) -> None:
         """Delete all cached entries."""
