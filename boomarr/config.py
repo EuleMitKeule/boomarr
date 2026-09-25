@@ -286,9 +286,6 @@ class FFProbeProberConfig(ProberConfig):
     timeout: float = Field(default=DEFAULT_FFPROBE_TIMEOUT, gt=0)
 
 
-AnyProberConfig = FFProbeProberConfig
-
-
 class PreProbeFilterConfig(_ConfigModel):
     """Base class for pre-probe filter configurations."""
 
@@ -624,6 +621,39 @@ def map_to_local(remote_path: str, mappings: list[PathMapping]) -> Path:
         if local is not None:
             return local
     return Path(remote_path)
+
+
+class _ArrProberConfig(ProberConfig):
+    url: str
+    api_key: SecretStr
+    path_mappings: list[PathMapping] = Field(default_factory=list)
+    cache_ttl: float = Field(default=300.0, ge=0)
+    timeout: float = Field(default=30.0, gt=0)
+
+    @field_validator("url", mode="after")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("url must start with http:// or https://")
+        return v.rstrip("/")
+
+
+class SonarrProberConfig(_ArrProberConfig):
+    """Use the audio languages Sonarr already knows (falls back if unknown)."""
+
+    type: Literal[ProberType.SONARR] = ProberType.SONARR
+
+
+class RadarrProberConfig(_ArrProberConfig):
+    """Use the audio languages Radarr already knows (falls back if unknown)."""
+
+    type: Literal[ProberType.RADARR] = ProberType.RADARR
+
+
+AnyProberConfig = Annotated[
+    FFProbeProberConfig | SonarrProberConfig | RadarrProberConfig,
+    Field(discriminator="type"),
+]
 
 
 class NotificationsConfig(_ConfigModel):

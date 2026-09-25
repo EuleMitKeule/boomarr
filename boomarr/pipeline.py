@@ -28,8 +28,10 @@ from boomarr.config import (
     PreProbeFilterType,
     ProberConfig,
     ProberType,
+    RadarrProberConfig,
     ResolutionFilterConfig,
     ScheduleTriggerConfig,
+    SonarrProberConfig,
     SQLiteDatabaseConfig,
     TriggerConfig,
     VideoCodecFilterConfig,
@@ -51,6 +53,7 @@ from boomarr.filters.media import (
     VideoCodecFilter,
 )
 from boomarr.models import RemovalGuard
+from boomarr.probers.arr import ArrProber
 from boomarr.probers.base import MediaProber
 from boomarr.probers.ffprobe import FFProbeProber
 from boomarr.state import InMemoryStateStore, SQLiteStateStore, StateStore
@@ -117,6 +120,14 @@ class PipelineFactory:
         self._state = state or InMemoryStateStore()
         self._dry_run = dry_run
         self._force = force
+        self._probers: dict[str, list[MediaProber]] = {}
+
+    def _cached_probers(self, configs: Sequence[ProberConfig]) -> list[MediaProber]:
+        """Reuse prober instances across scans (keeps e.g. Sonarr indexes warm)."""
+        key = "|".join(c.model_dump_json() for c in configs)
+        if key not in self._probers:
+            self._probers[key] = self._build_probers(configs)
+        return self._probers[key]
 
     @property
     def state(self) -> StateStore:
@@ -164,6 +175,20 @@ class PipelineFactory:
                         )
                     else:
                         probers.append(FFProbeProber())
+                case ProberType.SONARR | ProberType.RADARR:
+                    assert isinstance(  # noqa: S101
+                        config, SonarrProberConfig | RadarrProberConfig
+                    )
+                    probers.append(
+                        ArrProber(
+                            kind=config.type.value,
+                            url=config.url,
+                            api_key=config.api_key.get_secret_value(),
+                            path_mappings=config.path_mappings,
+                            cache_ttl=config.cache_ttl,
+                            timeout=config.timeout,
+                        )
+                    )
                 case _:
                     raise ValueError(f"Unknown prober: {config.type!r}")
         return probers
@@ -270,7 +295,7 @@ class PipelineFactory:
             else config.pre_probe_filters
         )
         return Pipeline(
-            probers=self._build_probers(prober_configs),
+            probers=self._cached_probers(prober_configs),
             pre_probe_filters=self._build_pre_probe_filters(pre_filter_configs),
             symlink_libraries=self._resolve_symlink_libraries(config, library),
             symlinks=SymlinkManager(dry_run=self._dry_run),
@@ -301,7 +326,7 @@ class PipelineFactory:
             library.probers if library.probers is not None else config.probers
         )
         return Pipeline(
-            probers=self._build_probers(prober_configs),
+            probers=self._cached_probers(prober_configs),
             pre_probe_filters=[],
             symlink_libraries=self._resolve_symlink_libraries(config, library),
             symlinks=SymlinkManager(dry_run=self._dry_run),

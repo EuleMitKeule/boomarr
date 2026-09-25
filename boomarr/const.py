@@ -27,6 +27,8 @@ class ProberType(StrEnum):
     """Discriminator values for prober config types."""
 
     FFPROBE = "ffprobe"
+    SONARR = "sonarr"
+    RADARR = "radarr"
 
 
 class PostProbeFilterType(StrEnum):
