@@ -118,6 +118,7 @@ jobs:
                     - type: audio_language
                       languages: [ger]
           EOF
+          chmod 755 "$work"
           sudo chown -R 1000:1000 "$work"
 
           # Root entrypoint path (PUID/PGID + gosu)
