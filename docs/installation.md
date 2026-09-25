@@ -76,7 +76,7 @@ docker run -d --name boomarr --restart unless-stopped \
 ## Unraid
 
 A template is available at
-[`contrib/unraid/boomarr.xml`](../contrib/unraid/boomarr.xml).
+[`contrib/unraid/boomarr.xml`](https://github.com/EuleMitKeule/boomarr/blob/master/contrib/unraid/boomarr.xml).
 
 1. *Docker* → *Template repositories*: add
    `https://github.com/EuleMitKeule/boomarr` and save.
@@ -125,15 +125,17 @@ volumeMounts:
     mountPath: /data/filtered
     subPath: filtered
 
-webhook:
-  enabled: true
-  existingSecret: boomarr-webhook   # key: api-key
+server:
+  enabled: true                     # webhooks, /metrics, /api/v1/status
+  existingSecret: boomarr-api       # key: api-key
+serviceMonitor:
+  enabled: true                     # Prometheus Operator
 ```
 
 The chart runs rootless with a read-only root filesystem, dropped
 capabilities and `RuntimeDefault` seccomp, uses a `Recreate` strategy (the
 probe cache is SQLite) and restarts the pod when the config changes. See
-[`charts/boomarr/values.yaml`](../charts/boomarr/values.yaml) for all
+[`charts/boomarr/values.yaml`](https://github.com/EuleMitKeule/boomarr/blob/master/charts/boomarr/values.yaml) for all
 options.
 
 ## pip / pipx / uv (bare metal)
@@ -147,7 +149,7 @@ CONFIG_DIR=/etc/boomarr boomarr scan --dry-run
 ```
 
 A hardened systemd unit is available at
-[`contrib/systemd/boomarr.service`](../contrib/systemd/boomarr.service).
+[`contrib/systemd/boomarr.service`](https://github.com/EuleMitKeule/boomarr/blob/master/contrib/systemd/boomarr.service).
 The service user needs read access to the sources and write access to the
 output directories and the config directory only.
 

@@ -289,6 +289,9 @@ def watch(
     _check_probers(config)
 
     triggers = PipelineFactory.build_triggers(config.triggers)
+    if not triggers and not config.server.enabled:
+        _LOGGER.warning("No triggers configured — nothing to watch")
+        return
     state = PipelineFactory.build_state_store(config)
     factory = PipelineFactory(state=state)
     runner = ScanRunner(config, factory, hooks=_build_hooks(config))
@@ -304,9 +307,6 @@ def watch(
                 status_provider=runner.status,
             )
         )
-    if not triggers:
-        _LOGGER.warning("No triggers configured — nothing to watch")
-        return
 
     watcher = Watcher(
         triggers=triggers,

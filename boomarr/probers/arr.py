@@ -156,6 +156,8 @@ class ArrProber(MediaProber):
                 try:
                     self._refresh()
                 except (OSError, ValueError, KeyError, TypeError) as exc:
+                    if isinstance(exc, urllib.error.HTTPError):
+                        exc.close()
                     _LOGGER.warning(
                         "Cannot read library from %s (%s); falling back",
                         self._kind.capitalize(),
@@ -176,6 +178,8 @@ class ArrProber(MediaProber):
         try:
             self._get("system/status")
         except (OSError, ValueError) as exc:
+            if isinstance(exc, urllib.error.HTTPError):
+                exc.close()
             _LOGGER.warning(
                 "%s at %s is not reachable (%s); files will be probed by the "
                 "next prober",

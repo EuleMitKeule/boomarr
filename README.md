@@ -51,7 +51,14 @@ No files are copied, moved or modified, and no disk space is used.
   filtered library. [Details](docs/how-it-works.md#safety-guarantees).
 - **Subtitles included**: external subtitles (`Film.de.srt`) follow their
   media file.
-- **Instant updates** via webhook from Sonarr/Radarr, plus scheduled scans.
+- **More than languages**: combine with resolution (4K only), video/audio
+  codec, surround channels, or invert any filter.
+- **Sonarr/Radarr aware**: optionally reuse the languages they already know
+  instead of probing, and rescan instantly on their webhooks.
+- **Integrates with your stack**: Prometheus `/metrics`, Apprise
+  notifications (Telegram, Discord, ntfy, …), automatic Plex/Jellyfin/Emby
+  folder refresh after changes, and a removal guard against accidental
+  mass deletions.
 - **Homelab friendly**: multi-arch Docker image (amd64/arm64) with
   `PUID`/`PGID` or rootless operation, healthcheck, Helm chart, Unraid
   template, systemd unit, `--dry-run`.
@@ -115,9 +122,10 @@ docker compose up -d
 
 | | |
 | --- | --- |
+| 📖 **[Documentation site](https://eulemitkeule.github.io/boomarr/)** | Everything below, nicely rendered |
 | [Installation](docs/installation.md) | Docker, Compose, Unraid, Helm, pip/pipx, systemd |
 | [Configuration](docs/configuration.md) | All options, filters, triggers, environment variables |
-| [Media servers](docs/media-servers.md) | Path mapping, Plex, Jellyfin/Emby, Sonarr/Radarr webhooks |
+| [Media servers](docs/media-servers.md) | Path mapping, Plex, Jellyfin/Emby, Sonarr/Radarr, automatic refresh |
 | [How it works](docs/how-it-works.md) | Scan pipeline, safety guarantees, commands |
 | [Troubleshooting](docs/troubleshooting.md) | FAQ and common problems |
 
@@ -125,7 +133,7 @@ docker compose up -d
 
 ```
 boomarr watch               run continuously (Docker default)
-boomarr scan [--dry-run]    one full scan
+boomarr scan [--dry-run] [--force]   one full scan (--force: bypass removal guard)
 boomarr clean               remove broken symlinks only
 boomarr status [--json]     cache statistics, languages found, output folders
 boomarr healthcheck         liveness check for Docker/Kubernetes
@@ -142,6 +150,8 @@ boomarr version
 | Link type | symlink (any filesystem) | hardlink (same filesystem) | symlink |
 | Incremental / cached | ✅ | ✅ | ❌ |
 | Webhook trigger | ✅ | ❌ | ❌ |
+| Resolution / codec filters | ✅ | ❌ | ❌ |
+| Metrics & notifications | ✅ | ❌ | ❌ |
 
 ## Development
 

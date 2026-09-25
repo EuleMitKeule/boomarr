@@ -89,6 +89,7 @@ def arr_url() -> Iterator[str]:
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
     httpd.shutdown()
+    httpd.server_close()
 
 
 def test_language_names_and_codes() -> None:

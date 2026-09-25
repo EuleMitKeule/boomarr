@@ -13,6 +13,10 @@ warning (e.g. `Unknown config option 'libraries[0].symlink_libraries[0].filters[
 - [Symlink libraries](#symlink-libraries)
 - [Filters](#filters)
 - [Triggers (watch mode)](#triggers-watch-mode)
+- [HTTP server: webhooks, metrics, status](#http-server-webhooks-metrics-status)
+- [Removal guard](#removal-guard)
+- [Notifications](#notifications)
+- [Media server refresh](#media-server-refresh)
 - [Probers](#probers)
 - [Database (probe cache)](#database-probe-cache)
 - [Logging](#logging)
@@ -48,6 +52,10 @@ track.
 | `sidecar_extensions` | `[.srt, .ass, .ssa, .sub, .idx, .vtt, .sup, .smi]` | External files that are linked together with a matching media file when their name starts with the media file's name (`Movie.mkv` → `Movie.de.srt`, `Movie.en.forced.ass`). Set `[]` to disable. |
 | `ignore_patterns` | see below | [fnmatch](https://docs.python.org/3/library/fnmatch.html) patterns of file and directory **names** that are skipped while scanning. |
 | `relative_symlinks` | `false` | Create relative symlinks (`../../movies/Film/Film.mkv`) instead of absolute ones. See [media servers](media-servers.md#path-mapping). |
+| `removal_guard` | 50 % / 20 | [Protection against mass removals](#removal-guard). |
+| `server` | disabled | [HTTP server](#http-server-webhooks-metrics-status) for webhooks, metrics and status. |
+| `notifications` | none | [Apprise notifications](#notifications). |
+| `media_servers` | `[]` | [Plex/Jellyfin/Emby refresh](#media-server-refresh) after changes. |
 | `probe_workers` | `4` | Number of files probed in parallel (1–64). Only new or changed files are probed. Lower it for slow spinning disks, raise it for SSD/NVMe. |
 | `probers` | `[ffprobe]` | [Probers](#probers) used to read audio tracks. |
 | `pre_probe_filters` | `[file_extension]` | Cheap filters applied before probing. |
@@ -148,6 +156,59 @@ as the same language, both in your config and in the files, so `deu`, `ger`,
 Tracks without a language tag are reported as `und`. Add `und` as an alias if
 your untagged files are in a known language.
 
+### `resolution`
+
+```yaml
+- type: resolution
+  min_height: 2160      # or "4k", "uhd", "1080p", "fhd", "720p", "hd", "sd"
+  max_height: 2160      # optional upper bound
+```
+
+The resolution is compared as its 16:9 equivalent, so cropped "scope"
+releases (1920×800) count as 1080p. A tolerance of 5 % applies. Automatic
+suffix: `2160p-plus`, `max-720p` or `720p-1080p`.
+
+### `video_codec` / `audio_codec`
+
+```yaml
+- type: video_codec
+  codecs: [hevc, av1]           # h265/x265 = hevc, avc/x264 = h264
+- type: audio_codec
+  codecs: [truehd, eac3, dts]   # e-ac-3 = eac3, ac-3 = ac3
+```
+
+A file matches if at least one video (resp. audio) track uses one of the
+codecs. Suffix: the sorted codec names.
+
+### `audio_channels`
+
+```yaml
+- type: audio_channels
+  min_channels: 6               # 5.1 or more
+```
+
+### `invert`
+
+Every filter accepts `invert: true` to negate it, e.g. "everything that has
+no English audio track":
+
+```yaml
+- type: audio_language
+  languages: [eng]
+  invert: true                  # automatic suffix: not-eng
+```
+
+Filters of a symlink library are combined with AND, so for example
+"German 4K with surround sound" is:
+
+```yaml
+- name: German UHD
+  filters:
+    - {type: audio_language, languages: [deu]}
+    - {type: resolution, min_height: 4k}
+    - {type: audio_channels, min_channels: 6}
+```
+
 ### `file_extension` (pre-probe)
 
 Only files with these extensions are probed. Case and leading dot do not
@@ -175,23 +236,24 @@ triggers:
     run_on_start: true   # scan immediately on startup (default true)
 ```
 
-### `webhook`
+## HTTP server: webhooks, metrics, status
 
-Starts an HTTP server and scans as soon as something calls it, e.g. Sonarr
-or Radarr after an import.
+`boomarr watch` can run a small built-in HTTP server:
 
 ```yaml
-triggers:
-  - type: schedule
-  - type: webhook
-    host: 0.0.0.0        # default
-    port: 9797           # default
-    api_key: change-me   # optional, falls back to the WEBHOOK_API_KEY env var
+server:
+  enabled: true
+  host: 0.0.0.0          # default
+  port: 9797             # default
+  api_key: change-me     # optional, falls back to BOOMARR_API_KEY
+  metrics_auth: false    # require the API key for /metrics too
 ```
 
 | Endpoint | Auth | Description |
 | --- | --- | --- |
 | `GET /health` | no | Liveness check, returns `{"status": "ok"}`. |
+| `GET /metrics` | if `metrics_auth` | [Prometheus](https://prometheus.io/) metrics. |
+| `GET /api/v1/status` | yes | Last scan result as JSON. |
 | `POST /api/v1/scan` | yes | Queue a full scan. |
 | `POST /api/v1/webhook/<name>` | yes | Same, `<name>` (e.g. `sonarr`) is only used for logging. |
 
@@ -208,7 +270,85 @@ The latter is what Sonarr/Radarr offer:
 Without an API key anyone who can reach the port can trigger scans (they
 cannot do anything else). Keep the port on an internal network.
 
+Metrics include `boomarr_scans_total{status}`, `boomarr_scan_duration_seconds`,
+`boomarr_last_scan_timestamp_seconds`, `boomarr_links{output}`,
+`boomarr_links_created_total`, `boomarr_links_removed_total`,
+`boomarr_files_probed_total`, `boomarr_errors_total`,
+`boomarr_removal_guard_blocked_total`, `boomarr_cache_entries` and
+`boomarr_build_info`. A useful alert:
+`time() - boomarr_last_scan_timestamp_seconds > 3600`.
+
+The older `triggers: [{type: webhook, ...}]` form still works and is turned
+into a `server` section (a deprecation warning is logged).
+
+## Removal guard
+
+Mass removals are almost always an accident (a share mounted empty, a
+wrong path, a filter typo). A scan therefore refuses to remove symlinks from
+an output directory when it would remove **more than `min_count` links and
+more than `max_percent` of them**:
+
+```yaml
+removal_guard:
+  max_percent: 50        # default; 100 disables the guard
+  min_count: 20          # default; small changes are always allowed
+```
+
+The scan logs an error, counts the output as `blocked` (metric
+`boomarr_removal_guard_blocked_total`, notification) and leaves the links
+alone; new links are still created. If the removals are intended, e.g.
+after changing filters, run once:
+
+```bash
+docker exec boomarr boomarr scan --force
+```
+
+## Notifications
+
+Boomarr sends notifications through [Apprise](https://github.com/caronc/apprise/wiki),
+which supports Telegram, Discord, Slack, Matrix, ntfy, Gotify, Pushover,
+e-mail and ~100 more services.
+
+```yaml
+notifications:
+  urls:                  # or BOOMARR_NOTIFY_URLS (whitespace separated)
+    - tgram://bottoken/ChatID
+    - ntfys://ntfy.sh/my-boomarr
+  on_errors: true        # default: scan failed or files could not be probed
+  on_blocked: true       # default: the removal guard blocked a removal
+  on_changes: false      # links were created or removed
+```
+
+## Media server refresh
+
+After a scan changed an output directory, Boomarr can tell your media server
+to rescan exactly that folder instead of waiting for its schedule:
+
+```yaml
+media_servers:
+  - type: plex
+    url: http://plex:32400
+    token: your-plex-token            # https://support.plex.tv/articles/204059436
+  - type: jellyfin                    # or: emby
+    url: http://jellyfin:8096
+    api_key: your-api-key             # Dashboard → API Keys
+    # Only needed if the media server sees the output under another path:
+    path_mappings:
+      - local: /data/filtered         # path inside Boomarr
+        remote: /media/filtered       # same folder inside the media server
+```
+
+- **Plex:** every library section whose folder contains (or is inside) a
+  changed output directory gets a partial scan of that folder.
+- **Jellyfin/Emby:** the changed folders are reported via
+  `/Library/Media/Updated`, which triggers a targeted scan.
+
+Failures are logged and never affect the scan.
+
 ## Probers
+
+Probers read the audio tracks of a file. They form a fallback chain: the
+first prober that returns a result wins.
 
 ```yaml
 probers:
@@ -219,6 +359,34 @@ probers:
 
 Boomarr checks at startup that ffprobe is available and exits with a clear
 error otherwise. The Docker image ships a static ffprobe build.
+
+### `sonarr` / `radarr`
+
+Sonarr and Radarr already know the audio languages of every file they
+imported. Asking them is much faster than probing, especially on network
+storage:
+
+```yaml
+libraries:
+  - name: Movies
+    input_path: /data/media/movies
+    probers:
+      - type: radarr
+        url: http://radarr:7878
+        api_key: your-radarr-api-key
+        path_mappings:                # only if Radarr uses other paths
+          - local: /data/media/movies
+            remote: /movies
+        cache_ttl: 300                # seconds the library index is reused
+      - ffprobe                       # fallback for files Radarr doesn't know
+    symlink_libraries: [...]
+```
+
+Boomarr fetches the whole library in one request (Sonarr: one per series),
+caches it for `cache_ttl` seconds and maps paths with `path_mappings`. Files
+Sonarr/Radarr do not know, or whose languages are empty, go to the next
+prober. If the server is unreachable, Boomarr logs a warning and falls back
+as well.
 
 ## Database (probe cache)
 
@@ -273,7 +441,8 @@ The log directory can only be set via `LOG_DIR` / `--log-dir` (default
 | `LOG_FILE_NAME` | `--log-file-name` | Log file name. |
 | `LOG_COLOR`, `LOG_FORMAT`, `LOG_ROTATION_ENABLED`, … | | Any `logging.*` option as `LOG_<OPTION>` / `LOG_ROTATION_<OPTION>`. |
 | `TZ` | | Timezone for timestamps. |
-| `WEBHOOK_API_KEY` | | API key for webhook triggers without `api_key`. |
+| `BOOMARR_API_KEY` | | API key for the HTTP server when `server.api_key` is not set (`WEBHOOK_API_KEY` also works). |
+| `BOOMARR_NOTIFY_URLS` | | Whitespace separated Apprise URLs when `notifications.urls` is not set. |
 | `HEARTBEAT_FILE` | | Heartbeat file used by `boomarr healthcheck`. |
 | `PUID`, `PGID`, `UMASK` | | Docker only: user, group and umask Boomarr runs as. |
 | `DANGEROUS_SKIP_READONLY_CHECK` | `--dangerous-skip-readonly-check` | Disable the read-only source check. Development only. |
@@ -291,7 +460,8 @@ For every symlink library the output directory is, in order of precedence:
 
 where `<base>` is the library's `output_path` or the global `output_path`.
 The automatic suffix of an `audio_language` filter is its configured codes,
-lower-cased, sorted and joined with `-` (`[eng, DEU]` → `deu-eng`).
+lower-cased, sorted and joined with `-` (`[eng, DEU]` → `deu-eng`); see the
+individual filters for theirs. Inverted filters are prefixed with `not-`.
 
 ## Validation rules
 
