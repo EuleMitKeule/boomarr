@@ -135,7 +135,7 @@ docker compose up -d
 boomarr watch               run continuously (Docker default)
 boomarr scan [--dry-run] [--force]   one full scan (--force: bypass removal guard)
 boomarr clean               remove broken symlinks only
-boomarr status [--json]     cache statistics, languages found, output folders
+boomarr status [--json]     last scan, cache, languages, triggers, links + filters per output
 boomarr healthcheck         liveness check for Docker/Kubernetes
 boomarr paths               print writable directories
 boomarr version

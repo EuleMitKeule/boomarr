@@ -92,6 +92,14 @@ class StateStore(abc.ABC):
         """Return the number of cached entries."""
         return int(self.get_stats()["total_cached"])
 
+    @abc.abstractmethod
+    def set_meta(self, key: str, value: dict[str, Any]) -> None:
+        """Persist a small JSON document (e.g. the last scan report)."""
+
+    @abc.abstractmethod
+    def get_meta(self, key: str) -> dict[str, Any] | None:
+        """Return a document stored with :meth:`set_meta`, or None."""
+
     def close(self) -> None:  # noqa: B027 - optional hook
         """Release resources held by the store."""
 
@@ -101,6 +109,7 @@ class InMemoryStateStore(StateStore):
 
     def __init__(self) -> None:
         self._entries: dict[str, tuple[MediaInfo, float]] = {}
+        self._meta: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._hits: int = 0
         self._misses: int = 0
@@ -122,6 +131,14 @@ class InMemoryStateStore(StateStore):
     def put(self, info: MediaInfo) -> None:
         with self._lock:
             self._entries[str(info.file_path)] = (info, time.time())
+
+    def set_meta(self, key: str, value: dict[str, Any]) -> None:
+        with self._lock:
+            self._meta[key] = json.loads(json.dumps(value, default=str))
+
+    def get_meta(self, key: str) -> dict[str, Any] | None:
+        with self._lock:
+            return self._meta.get(key)
 
     def remove(self, file: Path) -> None:
         with self._lock:
@@ -170,6 +187,10 @@ CREATE TABLE IF NOT EXISTS file_cache (
     size       INTEGER NOT NULL,
     tracks     TEXT    NOT NULL,
     probed_at  REAL    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
 );
 """
 
@@ -345,6 +366,28 @@ class SQLiteStateStore(StateStore):
         with self._lock:
             row = self._conn.execute("SELECT COUNT(*) FROM file_cache").fetchone()
         return int(row[0])
+
+    def set_meta(self, key: str, value: dict[str, Any]) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, json.dumps(value, default=str)),
+            )
+            self._conn.commit()
+
+    def get_meta(self, key: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?", (key,)
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            value = json.loads(row[0])
+        except ValueError:
+            return None
+        return value if isinstance(value, dict) else None
 
     def reset(self) -> None:
         """Delete all cached entries."""
