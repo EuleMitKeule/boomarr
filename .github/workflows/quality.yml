@@ -95,14 +95,14 @@ jobs:
           context: .
           load: true
           tags: boomarr:ci
-          build-args: VERSION=0.0.0-ci
+          build-args: VERSION=0.0.1
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Smoke test
         run: |
           set -eux
-          docker run --rm boomarr:ci boomarr version | grep 0.0.0-ci
+          docker run --rm boomarr:ci boomarr version | grep 0.0.1
           docker run --rm --entrypoint ffprobe boomarr:ci -version
 
           work="$(mktemp -d)"
