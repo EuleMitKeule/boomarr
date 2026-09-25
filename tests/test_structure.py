@@ -66,6 +66,8 @@ def _mock_symlinks() -> MagicMock:
     symlinks.ensure_link.return_value = True
     symlinks.remove_link.return_value = False
     symlinks.clean_stale.return_value = 0
+    symlinks.reconcile.return_value = 0
+    symlinks.iter_links.return_value = []
     return symlinks
 
 
@@ -253,7 +255,7 @@ class TestMovieDirectoryStructure:
         processor.process_library(_make_library(input_dir, output_dir))
 
         expected = output_dir / "Movie.In.Folder" / "Movie.In.Folder.DE.EN.mkv"
-        symlinks.ensure_link.assert_any_call(mkv, expected)
+        symlinks.ensure_link.assert_any_call(mkv, expected, relative=False)
 
     def test_nested_two_levels_dest_path(self, tmp_path: Path) -> None:
         """A movie nested two levels deep gets the correct mirrored dest."""
@@ -276,10 +278,10 @@ class TestMovieDirectoryStructure:
         processor.process_library(_make_library(input_dir, output_dir))
 
         expected = output_dir / "Collection" / "Sequel" / "Sequel.Movie.DE.mkv"
-        symlinks.ensure_link.assert_any_call(mkv, expected)
+        symlinks.ensure_link.assert_any_call(mkv, expected, relative=False)
 
     def test_non_media_files_not_symlinked(self, tmp_path: Path) -> None:
-        """Non-media sidecar files (.jpg, .nfo, .srt) must not trigger ensure_link."""
+        """Images and NFOs are never linked; subtitles only as sidecars."""
         input_dir = tmp_path / "input"
         output_dir = tmp_path / "output"
         files = _create_movies_tree(input_dir)
@@ -300,12 +302,16 @@ class TestMovieDirectoryStructure:
         # Collect all dest paths passed to ensure_link
         linked_dests = {c.args[1] for c in symlinks.ensure_link.call_args_list}
 
-        # Non-media files must NOT appear
+        # Non-media files must NOT appear; subtitles follow their media file
         for label, path in files.items():
-            if path.suffix in (".jpg", ".nfo", ".srt"):
-                rel = path.relative_to(input_dir)
+            rel = path.relative_to(input_dir)
+            if path.suffix in (".jpg", ".nfo"):
                 assert output_dir / rel not in linked_dests, (
                     f"Non-media file {label} should not be symlinked"
+                )
+            elif path.suffix == ".srt":
+                assert output_dir / rel in linked_dests, (
+                    f"Subtitle sidecar {label} should follow its media file"
                 )
 
     def test_root_and_nested_movies_together(self, tmp_path: Path) -> None:
@@ -342,7 +348,8 @@ class TestMovieDirectoryStructure:
         # English-only should NOT be linked
         assert output_dir / "Sample.Movie.EN.mkv" not in linked_dests
 
-        assert result.created == 4
+        # 4 German movies + the Sequel.Movie.DE.srt subtitle sidecar
+        assert result.created == 5
 
 
 # ---------------------------------------------------------------------------
@@ -659,7 +666,7 @@ class TestMultiSeasonFiltering:
         processor = LibraryProcessor(pipeline)
         result = processor.process_library(_make_library(input_dir, output_dir))
 
-        # 4 DE matches created, 2 EN-only rejected (remove_link returns False → unchanged)
+        # 4 DE matches created, 2 EN-only rejected (nothing to link)
         assert result.created == 4
-        assert result.unchanged == 2
+        assert result.unchanged == 0
         assert result.errors == 0

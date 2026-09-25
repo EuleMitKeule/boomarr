@@ -1,316 +1,238 @@
-"""Tests for InMemoryStateStore and SQLiteStateStore."""
+"""Tests for the probe cache (state stores)."""
 
+import sqlite3
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from boomarr.state import SCHEMA_VERSION, InMemoryStateStore, SQLiteStateStore
-
-# ---------------------------------------------------------------------------
-# Shared behaviour expected from every StateStore implementation
-# ---------------------------------------------------------------------------
+from boomarr.models import AudioTrack, MediaInfo
+from boomarr.state import (
+    SCHEMA_VERSION,
+    InMemoryStateStore,
+    SQLiteStateStore,
+    StateStore,
+)
 
 FILE_A = Path("/media/movies/a.mkv")
 FILE_B = Path("/media/movies/b.mkv")
+FILE_OTHER = Path("/media/shows/c.mkv")
 
 
-class _SharedStateBehaviour:
-    """Mixin with tests that must pass for every StateStore implementation."""
+def _info(
+    path: Path = FILE_A,
+    size: int = 100,
+    mtime: float = 1.0,
+    languages: tuple[str, ...] = ("deu",),
+) -> MediaInfo:
+    return MediaInfo(
+        file_path=path,
+        audio_tracks=[
+            AudioTrack(index=i + 1, language=lang, codec="aac", title=f"T{i}")
+            for i, lang in enumerate(languages)
+        ],
+        size=size,
+        mtime=mtime,
+    )
 
-    def make_store(
-        self, tmp_path: Path
-    ) -> InMemoryStateStore | SQLiteStateStore:  # pragma: no cover
-        raise NotImplementedError
 
-    # --- cache miss (unknown file) ---
+@pytest.fixture(params=["memory", "sqlite"])
+def store(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[StateStore]:
+    """Run every contract test against both implementations."""
+    s: StateStore
+    if request.param == "memory":
+        s = InMemoryStateStore()
+    else:
+        s = SQLiteStateStore(tmp_path / "state.db")
+    yield s
+    s.close()
 
-    def test_unknown_file_is_not_unchanged(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        assert store.is_unchanged(FILE_A, size=100, mtime=1.0) is False
 
-    # --- cache hit ---
+class TestStateStoreContract:
+    def test_unknown_file_is_a_miss(self, store: StateStore) -> None:
+        assert store.get(FILE_A, 100, 1.0) is None
 
-    def test_hit_after_update(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        assert store.is_unchanged(FILE_A, size=100, mtime=1.0) is True
+    def test_hit_returns_cached_tracks(self, store: StateStore) -> None:
+        store.put(_info(languages=("deu", "eng")))
+        cached = store.get(FILE_A, 100, 1.0)
+        assert cached is not None
+        assert [t.language for t in cached.audio_tracks] == ["deu", "eng"]
+        assert cached.audio_tracks[0].codec == "aac"
+        assert cached.audio_tracks[0].title == "T0"
+        assert cached.file_path == FILE_A
 
-    # --- invalidation on mtime change ---
+    def test_no_audio_tracks_roundtrip(self, store: StateStore) -> None:
+        store.put(_info(languages=()))
+        cached = store.get(FILE_A, 100, 1.0)
+        assert cached is not None
+        assert cached.audio_tracks == []
 
-    def test_miss_on_mtime_change(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        assert store.is_unchanged(FILE_A, size=100, mtime=2.0) is False
+    @pytest.mark.parametrize(("size", "mtime"), [(101, 1.0), (100, 2.0)])
+    def test_changed_file_is_a_miss_and_invalidated(
+        self, store: StateStore, size: int, mtime: float
+    ) -> None:
+        store.put(_info())
+        assert store.get(FILE_A, size, mtime) is None
+        # The stale entry was dropped, so the original key misses as well.
+        assert store.get(FILE_A, 100, 1.0) is None
 
-    def test_entry_removed_after_mtime_change(self, tmp_path: Path) -> None:
-        """After a mtime-triggered miss, the entry must be gone (invalidated)."""
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        store.is_unchanged(FILE_A, size=100, mtime=2.0)  # triggers invalidation
-        # A second call with the ORIGINAL mtime should still miss
-        assert store.is_unchanged(FILE_A, size=100, mtime=1.0) is False
+    def test_put_overwrites(self, store: StateStore) -> None:
+        store.put(_info(languages=("deu",)))
+        store.put(_info(size=200, mtime=2.0, languages=("eng",)))
+        cached = store.get(FILE_A, 200, 2.0)
+        assert cached is not None
+        assert [t.language for t in cached.audio_tracks] == ["eng"]
 
-    # --- invalidation on size change ---
-
-    def test_miss_on_size_change(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        assert store.is_unchanged(FILE_A, size=200, mtime=1.0) is False
-
-    # --- explicit remove ---
-
-    def test_remove_clears_entry(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
+    def test_remove(self, store: StateStore) -> None:
+        store.put(_info())
         store.remove(FILE_A)
-        assert store.is_unchanged(FILE_A, size=100, mtime=1.0) is False
+        assert store.get(FILE_A, 100, 1.0) is None
 
-    def test_remove_nonexistent_is_noop(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.remove(FILE_A)  # must not raise
+    def test_prune_only_touches_root(self, store: StateStore) -> None:
+        store.put(_info(FILE_A))
+        store.put(_info(FILE_B))
+        store.put(_info(FILE_OTHER))
+        removed = store.prune(Path("/media/movies"), keep={FILE_A})
+        assert removed == 1
+        assert store.get(FILE_A, 100, 1.0) is not None
+        assert store.get(FILE_B, 100, 1.0) is None
+        assert store.get(FILE_OTHER, 100, 1.0) is not None
 
-    # --- stats: total_cached / matched ---
+    def test_prune_does_not_match_sibling_prefix(self, store: StateStore) -> None:
+        sibling = Path("/media/movies-4k/x.mkv")
+        store.put(_info(sibling))
+        assert store.prune(Path("/media/movies"), keep=set()) == 0
+        assert store.get(sibling, 100, 1.0) is not None
 
-    def test_stats_empty(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
+    def test_stats_empty(self, store: StateStore) -> None:
         stats = store.get_stats()
         assert stats["total_cached"] == 0
-        assert stats["matched"] == 0
-        assert stats["filtered_out"] == 0
+        assert stats["without_audio"] == 0
+        assert stats["languages"] == {}
+        assert stats["last_probe_time"] is None
+        assert stats["hit_rate"] == 0.0
 
-    def test_stats_after_updates(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        store.update(FILE_B, size=200, mtime=2.0, matched=False)
+    def test_stats_counts_languages(self, store: StateStore) -> None:
+        store.put(_info(FILE_A, languages=("deu", "eng")))
+        store.put(_info(FILE_B, languages=("DEU",)))
+        store.put(_info(FILE_OTHER, languages=()))
         stats = store.get_stats()
-        assert stats["total_cached"] == 2
-        assert stats["matched"] == 1
-        assert stats["filtered_out"] == 1
+        assert stats["total_cached"] == 3
+        assert stats["without_audio"] == 1
+        assert stats["languages"] == {"deu": 2, "eng": 1}
+        assert stats["last_probe_time"] is not None
 
-    def test_stats_filtered_out_equals_total_minus_matched(
-        self, tmp_path: Path
-    ) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=False)
-        store.update(FILE_B, size=200, mtime=2.0, matched=False)
-        stats = store.get_stats()
-        assert stats["filtered_out"] == stats["total_cached"] - stats["matched"]
+    def test_hit_rate(self, store: StateStore) -> None:
+        store.put(_info())
+        store.get(FILE_A, 100, 1.0)
+        store.get(FILE_B, 100, 1.0)
+        assert store.get_stats()["hit_rate"] == pytest.approx(0.5)
 
-    # --- hit rate tracking ---
+    def test_thread_safety(self, store: StateStore) -> None:
+        def worker(n: int) -> None:
+            for i in range(50):
+                path = Path(f"/media/movies/{n}-{i}.mkv")
+                store.put(_info(path))
+                assert store.get(path, 100, 1.0) is not None
 
-    def test_hit_rate_zero_when_no_probes(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        assert store.get_stats()["hit_rate"] == 0.0
-
-    def test_hit_rate_one_after_pure_hits(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        store.is_unchanged(FILE_A, size=100, mtime=1.0)  # hit
-        stats = store.get_stats()
-        assert stats["hit_rate"] == pytest.approx(1.0)
-
-    def test_hit_rate_zero_after_pure_misses(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.is_unchanged(FILE_A, size=100, mtime=1.0)  # miss
-        stats = store.get_stats()
-        assert stats["hit_rate"] == pytest.approx(0.0)
-
-    def test_hit_rate_half_on_equal_hits_and_misses(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        store.is_unchanged(FILE_A, size=100, mtime=1.0)  # hit
-        store.is_unchanged(FILE_B, size=200, mtime=2.0)  # miss
-        stats = store.get_stats()
-        assert stats["hit_rate"] == pytest.approx(0.5)
-
-    # --- upsert: re-update same path ---
-
-    def test_update_overwrites_existing_entry(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        store.update(FILE_A, size=200, mtime=2.0, matched=False)
-        # Only one entry should exist (upsert, not insert)
-        assert store.get_stats()["total_cached"] == 1
-        assert store.get_stats()["matched"] == 0
-        # Current values produce a hit
-        assert store.is_unchanged(FILE_A, size=200, mtime=2.0) is True
+        threads = [threading.Thread(target=worker, args=(n,)) for n in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert store.get_stats()["total_cached"] == 200
 
 
-# ---------------------------------------------------------------------------
-# InMemoryStateStore
-# ---------------------------------------------------------------------------
-
-
-class TestInMemoryStateStore(_SharedStateBehaviour):
-    def make_store(self, tmp_path: Path) -> InMemoryStateStore:
-        return InMemoryStateStore()
-
-    def test_last_scan_time_none_before_update(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        assert store.get_stats()["last_scan_time"] is None
-
-    def test_last_scan_time_set_after_update(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        assert store.get_stats()["last_scan_time"] is not None
-
-
-# ---------------------------------------------------------------------------
-# SQLiteStateStore
-# ---------------------------------------------------------------------------
-
-
-class TestSQLiteStateStore(_SharedStateBehaviour):
-    def make_store(self, tmp_path: Path) -> SQLiteStateStore:
-        return SQLiteStateStore(tmp_path / "test.db")
-
-    def test_db_file_created(self, tmp_path: Path) -> None:
-        db_path = tmp_path / "mydb.db"
-        SQLiteStateStore(db_path)
-        assert db_path.exists()
-
-    def test_db_dir_created_when_missing(self, tmp_path: Path) -> None:
-        db_path = tmp_path / "subdir" / "nested" / "test.db"
-        SQLiteStateStore(db_path)
-        assert db_path.exists()
-
-    def test_last_scan_time_none_when_empty(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        assert store.get_stats()["last_scan_time"] is None
-
-    def test_last_scan_time_set_after_update(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        assert store.get_stats()["last_scan_time"] is not None
-
+class TestSQLiteStateStore:
     def test_persistence_across_instances(self, tmp_path: Path) -> None:
-        """Data written by one instance must be readable by a new instance."""
-        db_path = tmp_path / "persist.db"
-        store1 = SQLiteStateStore(db_path)
-        store1.update(FILE_A, size=100, mtime=1.0, matched=True)
-        store1.close()
-
-        store2 = SQLiteStateStore(db_path)
-        assert store2.is_unchanged(FILE_A, size=100, mtime=1.0) is True
-        stats = store2.get_stats()
-        assert stats["total_cached"] == 1
-        assert stats["matched"] == 1
-
-    def test_invalidation_persists_across_instances(self, tmp_path: Path) -> None:
-        """An invalidated entry must stay gone after reopening the DB."""
-        db_path = tmp_path / "persist.db"
-        store1 = SQLiteStateStore(db_path)
-        store1.update(FILE_A, size=100, mtime=1.0, matched=True)
-        # Trigger invalidation via size change
-        store1.is_unchanged(FILE_A, size=999, mtime=1.0)
-        store1.close()
-
-        store2 = SQLiteStateStore(db_path)
-        assert store2.is_unchanged(FILE_A, size=100, mtime=1.0) is False
-        assert store2.get_stats()["total_cached"] == 0
-
-    def test_close_is_idempotent(self, tmp_path: Path) -> None:
-        store = self.make_store(tmp_path)
-        store.close()
-        # Second close should not raise
+        db = tmp_path / "state.db"
+        store = SQLiteStateStore(db)
+        store.put(_info())
         store.close()
 
-    def test_corrupt_db_is_reset(self, tmp_path: Path) -> None:
-        """A corrupt database file should be silently replaced."""
-        db_path = tmp_path / "corrupt.db"
-        db_path.write_bytes(b"this is not a sqlite database")
-
-        store = SQLiteStateStore(db_path)
-        # Should be usable after reset
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        assert store.is_unchanged(FILE_A, size=100, mtime=1.0) is True
-        store.close()
-
-    def test_has_threading_lock(self, tmp_path: Path) -> None:
-        """SQLiteStateStore should have a threading lock for thread safety."""
-        import threading
-
-        store = self.make_store(tmp_path)
-        assert hasattr(store, "_lock")
-        assert isinstance(store._lock, type(threading.Lock()))
-
-    def test_db_path_property(self, tmp_path: Path) -> None:
-        """db_path property should return the configured database path."""
-        db_path = tmp_path / "prop.db"
-        store = SQLiteStateStore(db_path)
-        assert store.db_path == db_path
-        store.close()
-
-    def test_was_reset_false_on_fresh_db(self, tmp_path: Path) -> None:
-        """A brand-new database should not report was_reset after first init."""
-        db_path = tmp_path / "fresh.db"
-        store = SQLiteStateStore(db_path)
-        # First init sets schema version, so was_reset is True for the very
-        # first creation (version 0 → SCHEMA_VERSION mismatch).
-        # After the migration, subsequent opens with matching version are fine.
-        store.close()
-
-        store2 = SQLiteStateStore(db_path)
+        store2 = SQLiteStateStore(db)
+        assert store2.get(FILE_A, 100, 1.0) is not None
         assert store2.was_reset is False
         store2.close()
 
-    def test_was_reset_true_on_version_mismatch(self, tmp_path: Path) -> None:
-        """Opening a DB with a different schema version triggers a reset."""
-        import sqlite3
+    def test_fresh_db_is_not_reported_as_reset(self, tmp_path: Path) -> None:
+        store = SQLiteStateStore(tmp_path / "fresh.db")
+        assert store.was_reset is False
+        store.close()
 
-        db_path = tmp_path / "old.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
+    def test_schema_version_set(self, tmp_path: Path) -> None:
+        db = tmp_path / "ver.db"
+        SQLiteStateStore(db).close()
+        conn = sqlite3.connect(str(db))
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        conn.close()
+
+    def test_old_schema_is_rebuilt(self, tmp_path: Path) -> None:
+        db = tmp_path / "old.db"
+        conn = sqlite3.connect(str(db))
         conn.execute(
-            "CREATE TABLE file_cache ("
-            "path TEXT PRIMARY KEY, mtime REAL, size INTEGER, "
-            "has_match INTEGER, checked_at REAL)"
+            "CREATE TABLE file_cache (path TEXT PRIMARY KEY, mtime REAL, "
+            "size INTEGER, has_match INTEGER, checked_at REAL)"
         )
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 99}")
+        conn.execute("INSERT INTO file_cache VALUES ('/x.mkv', 1.0, 1, 1, 1.0)")
+        conn.execute("PRAGMA user_version = 2")
         conn.commit()
         conn.close()
 
-        store = SQLiteStateStore(db_path)
+        store = SQLiteStateStore(db)
         assert store.was_reset is True
-        # Store should still be usable
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        assert store.is_unchanged(FILE_A, size=100, mtime=1.0) is True
-        store.close()
-
-    def test_schema_version_set_after_init(self, tmp_path: Path) -> None:
-        """After initialisation the DB user_version must equal SCHEMA_VERSION."""
-        import sqlite3
-
-        db_path = tmp_path / "ver.db"
-        store = SQLiteStateStore(db_path)
-        store.close()
-
-        conn = sqlite3.connect(str(db_path))
-        row = conn.execute("PRAGMA user_version").fetchone()
-        conn.close()
-        assert row is not None
-        assert row[0] == SCHEMA_VERSION
-
-    def test_reset_method(self, tmp_path: Path) -> None:
-        """reset() should delete the DB and reinitialise cleanly."""
-        db_path = tmp_path / "reset.db"
-        store = SQLiteStateStore(db_path)
-        store.update(FILE_A, size=100, mtime=1.0, matched=True)
-        assert store.get_stats()["total_cached"] == 1
-
-        store.reset()
         assert store.get_stats()["total_cached"] == 0
-        assert db_path.exists()
-        # Still usable after reset
-        store.update(FILE_B, size=200, mtime=2.0, matched=False)
-        assert store.is_unchanged(FILE_B, size=200, mtime=2.0) is True
+        store.put(_info())
+        assert store.get(FILE_A, 100, 1.0) is not None
+        store.close()
+
+    @pytest.mark.parametrize("content", [b"not a sqlite database", b"\x00" * 4096])
+    def test_corrupt_db_is_reset(self, tmp_path: Path, content: bytes) -> None:
+        db = tmp_path / "corrupt.db"
+        db.write_bytes(content)
+        store = SQLiteStateStore(db)
+        store.put(_info())
+        assert store.get(FILE_A, 100, 1.0) is not None
         store.close()
 
     def test_corrupt_db_sets_was_reset(self, tmp_path: Path) -> None:
-        """A corrupt database file should set was_reset to True."""
-        db_path = tmp_path / "corrupt2.db"
-        db_path.write_bytes(b"not a sqlite database")
-
-        store = SQLiteStateStore(db_path)
+        db = tmp_path / "corrupt.db"
+        db.write_bytes(b"garbage" * 100)
+        store = SQLiteStateStore(db)
         assert store.was_reset is True
+        store.close()
+
+    def test_corrupt_reset_removes_stale_wal(self, tmp_path: Path) -> None:
+        db = tmp_path / "corrupt.db"
+        db.write_bytes(b"garbage" * 100)
+        wal = Path(f"{db}-wal")
+        wal.write_bytes(b"old wal")
+        SQLiteStateStore(db).close()
+        assert not wal.exists() or wal.read_bytes() != b"old wal"
+
+    def test_unreadable_cache_entry_is_discarded(self, tmp_path: Path) -> None:
+        db = tmp_path / "state.db"
+        store = SQLiteStateStore(db)
+        store.put(_info())
+        store._conn.execute("UPDATE file_cache SET tracks = 'not json'")
+        store._conn.commit()
+        assert store.get(FILE_A, 100, 1.0) is None
+        assert store.get_stats()["total_cached"] == 0
+        store.close()
+
+    def test_reset_clears_entries(self, tmp_path: Path) -> None:
+        store = SQLiteStateStore(tmp_path / "state.db")
+        store.put(_info())
+        store.reset()
+        assert store.get_stats()["total_cached"] == 0
+        store.put(_info(FILE_B))
+        assert store.get(FILE_B, 100, 1.0) is not None
+        store.close()
+
+    def test_creates_parent_directory(self, tmp_path: Path) -> None:
+        db = tmp_path / "nested" / "dir" / "state.db"
+        store = SQLiteStateStore(db)
+        assert db.exists()
+        assert store.db_path == db
         store.close()

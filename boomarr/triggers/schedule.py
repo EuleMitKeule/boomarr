@@ -1,6 +1,7 @@
 """Periodic schedule trigger source."""
 
 import asyncio
+import contextlib
 import logging
 import time
 
@@ -37,10 +38,8 @@ class ScheduleTrigger(TriggerSource):
         """Cancel the periodic loop if running."""
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
             _LOGGER.debug("Schedule trigger stopped")
 

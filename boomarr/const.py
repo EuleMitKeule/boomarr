@@ -46,6 +46,14 @@ class TriggerType(StrEnum):
     """Discriminator values for trigger source config types."""
 
     SCHEDULE = "schedule"
+    WEBHOOK = "webhook"
+
+
+class AudioLanguageMatchMode(StrEnum):
+    """How the configured languages of an audio_language filter are combined."""
+
+    ANY = "any"
+    ALL = "all"
 
 
 ENV_CONFIG_DIR = "CONFIG_DIR"
@@ -54,6 +62,7 @@ ENV_LOG_LEVEL = "LOG_LEVEL"
 ENV_LOG_DIR = "LOG_DIR"
 ENV_LOG_FILE_NAME = "LOG_FILE_NAME"
 ENV_SKIP_READONLY_CHECK = "DANGEROUS_SKIP_READONLY_CHECK"
+ENV_WEBHOOK_API_KEY = "WEBHOOK_API_KEY"
 
 ENV_PREFIX_GENERAL = ""
 ENV_PREFIX_LOGGING = "LOG"
@@ -126,6 +135,44 @@ DEFAULT_SCHEDULE_INTERVAL: int = 600  # 10 minutes
 DEFAULT_SCHEDULE_RUN_ON_START: bool = True
 
 DEFAULT_WATCH_DEBOUNCE: float = 2.0
+
+DEFAULT_WEBHOOK_HOST: str = "0.0.0.0"  # noqa: S104 - container default
+DEFAULT_WEBHOOK_PORT: int = 9797
+
+DEFAULT_FFPROBE_PATH: str = "ffprobe"
+DEFAULT_FFPROBE_TIMEOUT: float = 60.0
+
+DEFAULT_PROBE_WORKERS: int = 4
+
+HEARTBEAT_INTERVAL: float = 30.0
+HEARTBEAT_MAX_AGE: float = 120.0
+ENV_HEARTBEAT_FILE = "HEARTBEAT_FILE"
+DEFAULT_HEARTBEAT_FILE_NAME = "boomarr.heartbeat"
+
+# External subtitle files that are linked next to a matching media file
+# when their name starts with the media file's stem (e.g. ``Movie.de.srt``).
+DEFAULT_SIDECAR_EXTENSIONS: tuple[str, ...] = (
+    ".srt",
+    ".ass",
+    ".ssa",
+    ".sub",
+    ".idx",
+    ".vtt",
+    ".sup",
+    ".smi",
+)
+
+# File and directory names (fnmatch patterns) skipped during discovery.
+DEFAULT_IGNORE_PATTERNS: tuple[str, ...] = (
+    ".*",  # hidden files/dirs, macOS "._" resource forks, .Trash-1000, ...
+    "@eaDir",  # Synology thumbnails
+    "#recycle",  # Synology recycle bin
+    "#snapshot",  # Synology snapshots
+    "$RECYCLE.BIN",  # Windows recycle bin
+    "System Volume Information",
+    "lost+found",
+    "Plex Versions",  # Plex optimized versions
+)
 
 MEDIA_EXTENSIONS: frozenset[str] = frozenset(
     {".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".flv", ".mov", ".webm"}

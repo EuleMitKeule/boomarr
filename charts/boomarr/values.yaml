@@ -1,0 +1,108 @@
+# -- Container image
+image:
+  repository: ghcr.io/eulemitkeule/boomarr
+  # -- Defaults to the chart's appVersion
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Boomarr configuration, rendered to /config/boomarr.yml.
+# See https://github.com/EuleMitKeule/boomarr/blob/master/docs/configuration.md
+config:
+  output_path: /media/filtered
+  libraries:
+    - name: Movies
+      input_path: /media/movies
+      symlink_libraries:
+        - filters:
+            - type: audio_language
+              languages: [deu]
+
+# -- Use an existing ConfigMap (key `boomarr.yml`) instead of `config`
+existingConfigMap: ""
+
+# -- Extra environment variables
+env:
+  TZ: UTC
+  LOG_LEVEL: info
+
+# -- Webhook trigger (e.g. for Sonarr/Radarr "Connect → Webhook").
+# Adds a `webhook` trigger to the config and exposes a Service.
+webhook:
+  enabled: false
+  port: 9797
+  # -- API key (stored in a Secret). Prefer `existingSecret` in production.
+  apiKey: ""
+  # -- Existing Secret containing the API key
+  existingSecret: ""
+  existingSecretKey: api-key
+
+service:
+  type: ClusterIP
+  port: 9797
+
+persistence:
+  # -- Stores the probe cache database and log files
+  config:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 1Gi
+
+# -- Media volumes. Mount source libraries READ-ONLY and at the same paths
+# your media server uses, plus a writable output volume.
+volumes: []
+#  - name: media
+#    nfs:
+#      server: nas.local
+#      path: /volume1/media
+#  - name: filtered
+#    persistentVolumeClaim:
+#      claimName: media-filtered
+volumeMounts: []
+#  - name: media
+#    mountPath: /media/movies
+#    subPath: movies
+#    readOnly: true
+#  - name: filtered
+#    mountPath: /media/filtered
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+resources: {}
+#  requests:
+#    cpu: 50m
+#    memory: 128Mi
+#  limits:
+#    memory: 512Mi
+
+livenessProbe:
+  exec:
+    command: [boomarr, healthcheck]
+  initialDelaySeconds: 30
+  periodSeconds: 60
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

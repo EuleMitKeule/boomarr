@@ -20,3 +20,11 @@ class MediaProber(abc.ABC):
         Returns None if the file cannot be probed (unsupported format,
         corrupted, inaccessible, etc.).
         """
+
+    def check_available(self) -> str | None:
+        """Return an error message if the prober cannot work, else None.
+
+        Called once at startup so that a missing dependency fails fast
+        instead of producing one error per media file.
+        """
+        return None

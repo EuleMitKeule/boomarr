@@ -1,0 +1,16 @@
+Boomarr is running in watch mode.
+
+  kubectl logs -f deploy/{{ include "boomarr.fullname" . }}
+  kubectl exec deploy/{{ include "boomarr.fullname" . }} -- boomarr status
+
+Remember: source media must be mounted read-only, and your media server
+must see the source files under the same paths as Boomarr.
+{{- if .Values.webhook.enabled }}
+
+Webhook URL for Sonarr/Radarr (Settings → Connect → Webhook):
+  http://{{ include "boomarr.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/api/v1/webhook/sonarr
+{{- if not (or .Values.webhook.apiKey .Values.webhook.existingSecret) }}
+
+WARNING: webhook.apiKey is empty, anyone in the cluster can trigger scans.
+{{- end }}
+{{- end }}

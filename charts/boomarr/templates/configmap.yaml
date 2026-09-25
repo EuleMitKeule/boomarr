@@ -1,0 +1,11 @@
+{{- if not .Values.existingConfigMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "boomarr.fullname" . }}
+  labels:
+    {{- include "boomarr.labels" . | nindent 4 }}
+data:
+  boomarr.yml: |
+    {{- include "boomarr.config" . | nindent 4 }}
+{{- end }}

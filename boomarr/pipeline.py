@@ -15,10 +15,10 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
 
 from boomarr.config import (
     Config,
+    FFProbeProberConfig,
     LibraryConfig,
     PostProbeFilterConfig,
     PostProbeFilterType,
@@ -26,9 +26,16 @@ from boomarr.config import (
     PreProbeFilterType,
     ProberConfig,
     ProberType,
+    ScheduleTriggerConfig,
     SQLiteDatabaseConfig,
     TriggerConfig,
-    TriggerType,
+    WebhookTriggerConfig,
+)
+from boomarr.const import (
+    DEFAULT_IGNORE_PATTERNS,
+    DEFAULT_PROBE_WORKERS,
+    DEFAULT_SIDECAR_EXTENSIONS,
+    AudioLanguageMatchMode,
 )
 from boomarr.filters.audio_language import AudioLanguageFilter
 from boomarr.filters.base import PostProbeFilter, PreProbeFilter
@@ -39,6 +46,7 @@ from boomarr.state import InMemoryStateStore, SQLiteStateStore, StateStore
 from boomarr.symlinks import SymlinkManager
 from boomarr.triggers.base import TriggerSource
 from boomarr.triggers.schedule import ScheduleTrigger
+from boomarr.triggers.webhook import WebhookTrigger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,7 +68,11 @@ class Pipeline:
         pre_probe_filters: Filters applied before probing (e.g. extension).
         symlink_libraries: Resolved symlink library definitions with output paths.
         symlinks: The symlink manager for creating/removing links.
-        state: The state store for tracking processed files.
+        state: The probe cache.
+        sidecar_extensions: Extensions of sidecar files linked with media.
+        ignore_patterns: fnmatch patterns of names skipped during discovery.
+        relative_symlinks: Create relative instead of absolute links.
+        probe_workers: Number of files probed in parallel.
     """
 
     probers: list[MediaProber]
@@ -68,6 +80,10 @@ class Pipeline:
     symlink_libraries: list[ResolvedSymlinkLibrary] = field(default_factory=list)
     symlinks: SymlinkManager = field(default_factory=SymlinkManager)
     state: StateStore = field(default_factory=InMemoryStateStore)
+    sidecar_extensions: frozenset[str] = frozenset(DEFAULT_SIDECAR_EXTENSIONS)
+    ignore_patterns: tuple[str, ...] = DEFAULT_IGNORE_PATTERNS
+    relative_symlinks: bool = False
+    probe_workers: int = DEFAULT_PROBE_WORKERS
 
 
 class PipelineFactory:
@@ -79,8 +95,11 @@ class PipelineFactory:
     stays untouched.
     """
 
-    def __init__(self, *, state: StateStore | None = None) -> None:
+    def __init__(
+        self, *, state: StateStore | None = None, dry_run: bool = False
+    ) -> None:
         self._state = state or InMemoryStateStore()
+        self._dry_run = dry_run
 
     @staticmethod
     def build_state_store(config: Config) -> StateStore:
@@ -95,12 +114,24 @@ class PipelineFactory:
         """Build trigger source instances from a list of trigger configs."""
         triggers: list[TriggerSource] = []
         for config in configs:
-            match config.type:
-                case TriggerType.SCHEDULE:
+            match config:
+                case ScheduleTriggerConfig():
                     triggers.append(
                         ScheduleTrigger(
-                            interval=getattr(config, "interval", 3600),
-                            run_on_start=getattr(config, "run_on_start", True),
+                            interval=config.interval,
+                            run_on_start=config.run_on_start,
+                        )
+                    )
+                case WebhookTriggerConfig():
+                    triggers.append(
+                        WebhookTrigger(
+                            host=config.host,
+                            port=config.port,
+                            api_key=(
+                                config.api_key.get_secret_value()
+                                if config.api_key is not None
+                                else None
+                            ),
                         )
                     )
                 case _:
@@ -114,7 +145,12 @@ class PipelineFactory:
         for config in configs:
             match config.type:
                 case ProberType.FFPROBE:
-                    probers.append(FFProbeProber())
+                    if isinstance(config, FFProbeProberConfig):
+                        probers.append(
+                            FFProbeProber(path=config.path, timeout=config.timeout)
+                        )
+                    else:
+                        probers.append(FFProbeProber())
                 case _:
                     raise ValueError(f"Unknown prober: {config.type!r}")
         return probers
@@ -157,6 +193,7 @@ class PipelineFactory:
                     languages=canonical,
                     aliases=aliases,
                     suffix=config.suffix,
+                    mode=getattr(config, "mode", AudioLanguageMatchMode.ANY),
                 )
             case _:
                 raise ValueError(f"Unknown post-probe filter type: {config.type!r}")
@@ -168,33 +205,16 @@ class PipelineFactory:
     ) -> list[ResolvedSymlinkLibrary]:
         """Resolve symlink library configs into runtime objects.
 
-        The effective output base is ``library.output_path`` when set,
-        otherwise ``config.output_path``.  When using the global output
-        path, library name is included in the auto-generated directory
-        name to avoid collisions between libraries.
+        Output paths come from :meth:`Config.symlink_library_output`, the
+        single source of truth shared with validation and the CLI.
         """
-        resolved: list[ResolvedSymlinkLibrary] = []
-        base_output = cast(
-            Path,
-            library.output_path
-            if library.output_path is not None
-            else config.output_path,
-        )
-
-        for sym_lib in library.symlink_libraries:
-            filters = [self._build_post_probe_filter(fc) for fc in sym_lib.filters]
-            if sym_lib.output_path is not None:
-                output_path = sym_lib.output_path
-            elif sym_lib.name is not None:
-                output_path = base_output / sym_lib.name
-            else:
-                lib_slug = library.name.lower().replace(" ", "-")
-                combined_suffix = "-".join(f.suffix for f in filters)
-                output_path = base_output / f"{lib_slug}-{combined_suffix}"
-            resolved.append(
-                ResolvedSymlinkLibrary(filters=filters, output_path=output_path)
+        return [
+            ResolvedSymlinkLibrary(
+                filters=[self._build_post_probe_filter(fc) for fc in sym_lib.filters],
+                output_path=config.symlink_library_output(library, sym_lib),
             )
-        return resolved
+            for sym_lib in library.symlink_libraries
+        ]
 
     def for_scan(self, config: Config, library: LibraryConfig) -> Pipeline:
         """Build a pipeline for the ``scan`` command.
@@ -214,8 +234,12 @@ class PipelineFactory:
             probers=self._build_probers(prober_configs),
             pre_probe_filters=self._build_pre_probe_filters(pre_filter_configs),
             symlink_libraries=self._resolve_symlink_libraries(config, library),
-            symlinks=SymlinkManager(),
+            symlinks=SymlinkManager(dry_run=self._dry_run),
             state=self._state,
+            sidecar_extensions=config.sidecar_extensions_for(library),
+            ignore_patterns=tuple(config.ignore_patterns_for(library)),
+            relative_symlinks=config.relative_symlinks_for(library),
+            probe_workers=config.probe_workers,
         )
 
     def for_watch(self, config: Config, library: LibraryConfig) -> Pipeline:
@@ -239,6 +263,6 @@ class PipelineFactory:
             probers=self._build_probers(prober_configs),
             pre_probe_filters=[],
             symlink_libraries=self._resolve_symlink_libraries(config, library),
-            symlinks=SymlinkManager(),
+            symlinks=SymlinkManager(dry_run=self._dry_run),
             state=self._state,
         )

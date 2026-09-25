@@ -2,13 +2,25 @@
 
 Orchestrates the scan/filter/symlink workflow for a single library using
 the subsystems provided by a Pipeline.
+
+A scan is a full reconciliation: the desired set of symlinks is computed
+from the (cached) probe results and the *current* filter configuration, then
+the output directories are brought in line with it. This makes the result
+independent of history — changed filters, new symlink libraries or manually
+deleted links are all fixed by the next scan.
 """
 
+import fnmatch
 import logging
+import os
+import threading
+from collections import defaultdict
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from boomarr.config import LibraryConfig
-from boomarr.models import ScanResult
+from boomarr.filters.base import PostProbeFilter
+from boomarr.models import MediaInfo, ScanResult
 from boomarr.pipeline import Pipeline
 
 _LOGGER = logging.getLogger(__name__)
@@ -17,147 +29,289 @@ _LOGGER = logging.getLogger(__name__)
 class LibraryProcessor:
     """Processes a single library through the configured pipeline.
 
-    Discovers media files, applies pre-probe filters, probes metadata
-    via a fallback chain, evaluates post-probe filters for each symlink
-    library, and manages symlinks accordingly.
+    Discovers media files, applies pre-probe filters, probes new or changed
+    files via a fallback chain (in parallel), evaluates post-probe filters
+    for each symlink library, and reconciles the symlinks accordingly.
+
+    Args:
+        pipeline: The configured subsystems.
+        cancel: Optional event; when set, the scan stops as soon as possible
+            without modifying any symlinks.
     """
 
-    def __init__(self, pipeline: Pipeline) -> None:
+    def __init__(
+        self, pipeline: Pipeline, *, cancel: threading.Event | None = None
+    ) -> None:
         self._pipeline = pipeline
+        self._cancel = cancel or threading.Event()
 
     def _dest_path(self, source: Path, input_path: Path, output_path: Path) -> Path:
         """Compute the destination symlink path mirroring the input structure."""
         relative = source.relative_to(input_path)
         return output_path / relative
 
+    def _is_ignored(self, name: str) -> bool:
+        return any(
+            fnmatch.fnmatchcase(name, pattern)
+            for pattern in self._pipeline.ignore_patterns
+        )
+
     def _discover_files(self, input_path: Path) -> list[Path]:
-        """Walk the input directory and return all files."""
+        """Walk the input directory and return all non-ignored files."""
         if not input_path.is_dir():
             _LOGGER.warning("Input path does not exist: %s", input_path)
             return []
-        return sorted(p for p in input_path.rglob("*") if p.is_file())
+        found: list[Path] = []
+
+        def on_error(exc: OSError) -> None:
+            _LOGGER.warning(
+                "Cannot read directory '%s': %s", exc.filename, exc.strerror
+            )
+
+        for dirpath, dirnames, filenames in os.walk(input_path, onerror=on_error):
+            dirnames[:] = [d for d in dirnames if not self._is_ignored(d)]
+            base = Path(dirpath)
+            for name in filenames:
+                if self._is_ignored(name):
+                    continue
+                path = base / name
+                if path.is_file():
+                    found.append(path)
+        return sorted(found)
+
+    def _has_links(self) -> bool:
+        return any(
+            self._pipeline.symlinks.iter_links(sym_lib.output_path)
+            for sym_lib in self._pipeline.symlink_libraries
+        )
+
+    def _input_is_usable(self, library: LibraryConfig, has_files: bool) -> bool:
+        """Guard against wiping all links when the source is not mounted.
+
+        If the input directory is missing, or empty while symlinks exist,
+        the most likely cause is an unmounted network share or disk. In that
+        case every symlink would look stale, so the library is skipped.
+        """
+        if not library.input_path.is_dir():
+            _LOGGER.error(
+                "Input path '%s' of library '%s' is missing. Skipping the library "
+                "and keeping all existing symlinks (is the share mounted?)",
+                library.input_path,
+                library.name,
+            )
+            return False
+        if not has_files and self._has_links():
+            _LOGGER.error(
+                "Input path '%s' of library '%s' contains no files but its output "
+                "directories contain symlinks. Skipping the library to protect "
+                "them (is the share mounted?)",
+                library.input_path,
+                library.name,
+            )
+            return False
+        return True
+
+    def _probe(self, file_path: Path) -> MediaInfo | None:
+        if self._cancel.is_set():
+            return None
+        for prober in self._pipeline.probers:
+            info = prober.probe(file_path)
+            if info is not None:
+                return info
+        return None
+
+    def _probe_all(
+        self,
+        to_probe: list[tuple[Path, int, float]],
+        infos: dict[Path, MediaInfo],
+        result: ScanResult,
+    ) -> None:
+        """Probe *to_probe* in parallel and store results in *infos*/state."""
+        total = len(to_probe)
+        if not total:
+            return
+        state = self._pipeline.state
+        workers = max(1, min(self._pipeline.probe_workers, total))
+        _LOGGER.info("Probing %d new or changed files (%d workers)", total, workers)
+        executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="probe")
+        try:
+            futures: dict[Future[MediaInfo | None], tuple[Path, int, float]] = {
+                executor.submit(self._probe, path): (path, size, mtime)
+                for path, size, mtime in to_probe
+            }
+            for idx, future in enumerate(as_completed(futures), 1):
+                if self._cancel.is_set():
+                    return
+                path, size, mtime = futures[future]
+                try:
+                    info = future.result()
+                except Exception:
+                    _LOGGER.exception("Error probing '%s'", path)
+                    info = None
+                if info is None:
+                    result.errors += 1
+                    _LOGGER.warning("[%d/%d] Could not probe '%s'", idx, total, path)
+                    continue
+                cached = MediaInfo(
+                    file_path=path,
+                    audio_tracks=info.audio_tracks,
+                    size=size,
+                    mtime=mtime,
+                )
+                state.put(cached)
+                infos[path] = cached
+                result.probed += 1
+                _LOGGER.info(
+                    "[%d/%d] Probed '%s': %s",
+                    idx,
+                    total,
+                    path.name,
+                    ", ".join(t.language for t in info.audio_tracks) or "no audio",
+                )
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
     def process_library(self, library: LibraryConfig) -> ScanResult:
         """Run the full scan pipeline on a single library."""
         result = ScanResult()
-        _LOGGER.info(
-            "Processing library '%s': %s",
-            library.name,
-            library.input_path,
-        )
+        input_path = library.input_path
+        _LOGGER.info("Processing library '%s': %s", library.name, input_path)
 
-        files = self._discover_files(library.input_path)
-        total_files = len(files)
-        _LOGGER.info("Discovered %d files in '%s'", total_files, library.name)
+        files = self._discover_files(input_path)
+        if not self._input_is_usable(library, bool(files)):
+            result.errors += 1
+            return result
+        _LOGGER.info("Discovered %d files in '%s'", len(files), library.name)
 
-        probers = self._pipeline.probers
         pre_filters = self._pipeline.pre_probe_filters
-        sym_libs = self._pipeline.symlink_libraries
-        symlinks = self._pipeline.symlinks
+        sidecar_exts = self._pipeline.sidecar_extensions
         state = self._pipeline.state
 
-        # Phase 1 – Preprocessing: filter and check state without probing
+        # Phase 1 – pre-filter and cache lookup (no probing)
+        media: list[Path] = []
+        sidecars_by_dir: dict[Path, list[Path]] = defaultdict(list)
+        infos: dict[Path, MediaInfo] = {}
         to_probe: list[tuple[Path, int, float]] = []
         for file_path in files:
             if not all(f.matches(file_path) for f in pre_filters):
                 result.filtered += 1
+                if file_path.suffix.lower() in sidecar_exts:
+                    sidecars_by_dir[file_path.parent].append(file_path)
                 continue
-
+            media.append(file_path)
             try:
                 stat = file_path.stat()
-                file_size = stat.st_size
-                file_mtime = stat.st_mtime
-            except Exception as e:
-                _LOGGER.exception("Error processing '%s': %s", file_path, e)
+            except OSError as exc:
+                _LOGGER.error("Cannot stat '%s': %s", file_path, exc)
                 result.errors += 1
                 continue
-
-            if state.is_unchanged(file_path, file_size, file_mtime):
+            cached = state.get(file_path, stat.st_size, stat.st_mtime)
+            if cached is not None:
+                infos[file_path] = cached
                 result.skipped += 1
-                continue
+            else:
+                to_probe.append((file_path, stat.st_size, stat.st_mtime))
 
-            to_probe.append((file_path, file_size, file_mtime))
+        # Phase 2 – probe new/changed files
+        self._probe_all(to_probe, infos, result)
+        if self._cancel.is_set():
+            _LOGGER.warning(
+                "Scan of '%s' cancelled; no symlinks were changed", library.name
+            )
+            return result
 
-        # Phase 2 – Probing: only files that passed preprocessing
-        total = len(to_probe)
-        for idx, (file_path, file_size, file_mtime) in enumerate(to_probe, 1):
-            try:
-                _LOGGER.info(
-                    "[%d/%d] Probing '%s'",
-                    idx,
-                    total,
-                    file_path.name,
-                )
+        # Phase 3 – reconcile every symlink library
+        for sym_lib in self._pipeline.symlink_libraries:
+            self._reconcile_symlink_library(
+                library,
+                sym_lib.output_path,
+                sym_lib.filters,
+                media,
+                infos,
+                sidecars_by_dir,
+                result,
+            )
 
-                info = None
-                for prober in probers:
-                    info = prober.probe(file_path)
-                    if info is not None:
-                        break
-
-                if info is None:
-                    result.errors += 1
-                    continue
-
-                matched_any = False
-                for sym_lib in sym_libs:
-                    dest = self._dest_path(
-                        file_path,
-                        library.input_path,
-                        sym_lib.output_path,
-                    )
-                    passed = all(f.matches(info) for f in sym_lib.filters)
-
-                    if passed:
-                        matched_any = True
-                        created = symlinks.ensure_link(file_path, dest)
-                        if created:
-                            result.created += 1
-                        else:
-                            result.unchanged += 1
-                    else:
-                        removed = symlinks.remove_link(dest)
-                        if removed:
-                            result.removed += 1
-                        else:
-                            result.unchanged += 1
-
-                state.update(file_path, file_size, file_mtime, matched=matched_any)
-
-            except Exception as e:
-                _LOGGER.exception("Error processing '%s': %s", file_path, e)
-                result.errors += 1
-
-        # Phase 3 – Cleanup
-        for sym_lib in sym_libs:
-            stale = symlinks.clean_stale(sym_lib.output_path)
-            result.removed += stale
-            if stale:
-                _LOGGER.info(
-                    "Cleaned %d stale symlinks in '%s'",
-                    stale,
-                    sym_lib.output_path,
-                )
+        # Phase 4 – forget cache entries of files that no longer exist
+        pruned = state.prune(input_path, set(files))
+        if pruned:
+            _LOGGER.debug("Pruned %d vanished files from the probe cache", pruned)
 
         _LOGGER.info(
             "Library '%s' complete: %d created, %d removed, %d unchanged, "
-            "%d skipped (cached), %d filtered (non-media), %d errors",
+            "%d probed, %d skipped (cached), %d filtered (non-media), %d errors",
             library.name,
             result.created,
             result.removed,
             result.unchanged,
+            result.probed,
             result.skipped,
             result.filtered,
             result.errors,
         )
         return result
 
+    def _sidecars_for(
+        self, media_path: Path, sidecars_by_dir: dict[Path, list[Path]]
+    ) -> list[Path]:
+        prefix = f"{media_path.stem}."
+        return [
+            p
+            for p in sidecars_by_dir.get(media_path.parent, [])
+            if p.name.startswith(prefix)
+        ]
+
+    def _reconcile_symlink_library(
+        self,
+        library: LibraryConfig,
+        output_path: Path,
+        filters: list[PostProbeFilter],
+        media: list[Path],
+        infos: dict[Path, MediaInfo],
+        sidecars_by_dir: dict[Path, list[Path]],
+        result: ScanResult,
+    ) -> None:
+        symlinks = self._pipeline.symlinks
+        relative = self._pipeline.relative_symlinks
+        input_path = library.input_path
+        expected: set[Path] = set()
+        preserve: set[Path] = set()
+
+        for file_path in media:
+            sources = [file_path, *self._sidecars_for(file_path, sidecars_by_dir)]
+            dests = [self._dest_path(s, input_path, output_path) for s in sources]
+            info = infos.get(file_path)
+            if info is None:
+                # Probe failed: keep whatever links exist for this file.
+                preserve.update(dests)
+                continue
+            if not all(f.matches(info) for f in filters):
+                continue
+            for source, dest in zip(sources, dests, strict=True):
+                expected.add(dest)
+                try:
+                    if symlinks.ensure_link(source, dest, relative=relative):
+                        result.created += 1
+                    else:
+                        result.unchanged += 1
+                except OSError as exc:
+                    _LOGGER.error("Cannot create symlink '%s': %s", dest, exc)
+                    result.errors += 1
+
+        removed = symlinks.reconcile(output_path, expected, input_path, preserve)
+        result.removed += removed
+        if removed:
+            _LOGGER.info("Removed %d symlinks from '%s'", removed, output_path)
+
     def clean_library(self, library: LibraryConfig) -> int:
         """Remove stale symlinks only (for the clean command)."""
+        input_path = library.input_path
+        has_files = input_path.is_dir() and any(input_path.iterdir())
+        if not self._input_is_usable(library, has_files):
+            return 0
         symlinks = self._pipeline.symlinks
         total = 0
         for sym_lib in self._pipeline.symlink_libraries:
-            stale = symlinks.clean_stale(sym_lib.output_path)
-            total += stale
+            total += symlinks.clean_stale(sym_lib.output_path)
         _LOGGER.info("Clean '%s': removed %d stale symlinks", library.name, total)
         return total

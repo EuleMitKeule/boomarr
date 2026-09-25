@@ -1,35 +1,81 @@
-FROM python:3.14-slim
+# syntax=docker/dockerfile:1
+
+ARG PYTHON_VERSION=3.14
+
+# Statically linked ffprobe (amd64 + arm64). Boomarr only needs ffprobe, so
+# this avoids pulling the full Debian ffmpeg package and its ~400 MB of
+# shared libraries into the image.
+FROM mwader/static-ffmpeg:8.0 AS ffmpeg
+
+FROM ghcr.io/astral-sh/uv:0.9 AS uv
+
+# ---------------------------------------------------------------------------
+# Build stage: resolve dependencies strictly from uv.lock
+# ---------------------------------------------------------------------------
+FROM python:${PYTHON_VERSION}-slim AS builder
+
+COPY --from=uv /uv /usr/local/bin/uv
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
+
+WORKDIR /src
+
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-install-project
+
+COPY README.md LICENSE.md ./
+COPY boomarr ./boomarr
+
+ARG VERSION=0.0.0-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    sed -i "s/0\.0\.0-dev/${VERSION}/g" pyproject.toml boomarr/const.py \
+    && uv sync --frozen --no-dev --no-editable
+
+# ---------------------------------------------------------------------------
+# Runtime stage
+# ---------------------------------------------------------------------------
+FROM python:${PYTHON_VERSION}-slim
+
+ARG VERSION=0.0.0-dev
+LABEL org.opencontainers.image.title="Boomarr" \
+      org.opencontainers.image.description="Symlink-based audio language filter for Plex, Jellyfin & Emby" \
+      org.opencontainers.image.source="https://github.com/EuleMitKeule/boomarr" \
+      org.opencontainers.image.documentation="https://github.com/EuleMitKeule/boomarr#readme" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg gosu \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY pyproject.toml README.md LICENSE.md ./
-RUN mkdir -p boomarr && touch boomarr/__init__.py boomarr/py.typed \
-    && pip install --no-cache-dir . \
-    && rm -rf boomarr
-
-COPY boomarr/ ./boomarr/
-RUN pip install --no-cache-dir --no-deps .
-
-RUN groupadd -g 1000 boomarr \
-    && useradd -u 1000 -g boomarr -m --no-log-init boomarr \
+    && apt-get install -y --no-install-recommends gosu tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 1000 boomarr \
+    && useradd -u 1000 -g boomarr -M -d /config -s /usr/sbin/nologin --no-log-init boomarr \
     && mkdir -p /config \
-    && chown boomarr:boomarr /app /config
+    && chown boomarr:boomarr /config
 
-ENV PUID=1000
-ENV PGID=1000
-ENV UMASK=022
-ENV TZ=UTC
-ENV CONFIG_DIR=/config
-ENV LOG_DIR=/config/logs
+COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
+COPY --from=builder /opt/venv /opt/venv
+COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+ENV PATH="/opt/venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PUID=1000 \
+    PGID=1000 \
+    UMASK=022 \
+    TZ=UTC \
+    CONFIG_DIR=/config \
+    LOG_DIR=/config/logs \
+    HEARTBEAT_FILE=/tmp/boomarr.heartbeat
 
 VOLUME /config
+EXPOSE 9797
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["boomarr", "--help"]
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["boomarr", "healthcheck"]
+
+ENTRYPOINT ["tini", "--", "/docker-entrypoint.sh"]
+CMD ["boomarr", "watch"]

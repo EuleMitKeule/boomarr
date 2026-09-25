@@ -1,110 +1,177 @@
 """State management module.
 
-Manages persistent state and runtime execution state for Boomarr operations.
-Handles tracking of processed files, configuration state, and synchronization
-status to enable resumable operations and conflict detection.
+Caches probe results so that unchanged media files never have to be probed
+twice. Filters are *not* cached: every scan re-evaluates the cached audio
+tracks against the current configuration, so changing languages or adding a
+symlink library takes effect on the next scan without re-probing anything.
 """
 
 import abc
+import json
 import logging
 import sqlite3
 import threading
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from boomarr.models import AudioTrack, MediaInfo
+
 _LOGGER = logging.getLogger(__name__)
 
-SCHEMA_VERSION: int = 2
+SCHEMA_VERSION: int = 3
+
+
+def _encode_tracks(tracks: list[AudioTrack]) -> str:
+    return json.dumps(
+        [[t.index, t.language, t.codec, t.title] for t in tracks],
+        separators=(",", ":"),
+    )
+
+
+def _decode_tracks(raw: str) -> list[AudioTrack]:
+    return [
+        AudioTrack(index=index, language=language, codec=codec, title=title)
+        for index, language, codec, title in json.loads(raw)
+    ]
 
 
 class StateStore(abc.ABC):
-    """Persistent store tracking which files have been processed."""
+    """Persistent cache of probe results keyed by path, size and mtime."""
+
+    @property
+    def was_reset(self) -> bool:
+        """Return True if the store was wiped during initialisation."""
+        return False
 
     @abc.abstractmethod
-    def is_unchanged(self, file: Path, size: int, mtime: float) -> bool:
-        """Return True if the file was previously processed with the same size/mtime."""
+    def get(self, file: Path, size: int, mtime: float) -> MediaInfo | None:
+        """Return the cached probe result if the file is unchanged, else None."""
 
     @abc.abstractmethod
-    def update(self, file: Path, size: int, mtime: float, matched: bool) -> None:
-        """Record that a file has been processed."""
+    def put(self, info: MediaInfo) -> None:
+        """Store the probe result for ``info.file_path``."""
 
     @abc.abstractmethod
     def remove(self, file: Path) -> None:
         """Remove a file's entry from the store."""
 
     @abc.abstractmethod
+    def prune(self, root: Path, keep: set[Path]) -> int:
+        """Drop all entries below *root* that are not in *keep*.
+
+        Returns the number of removed entries.
+        """
+
+    @abc.abstractmethod
     def get_stats(self) -> dict[str, Any]:
         """Return summary statistics for the status command."""
+
+    def close(self) -> None:  # noqa: B027 - optional hook
+        """Release resources held by the store."""
 
 
 class InMemoryStateStore(StateStore):
     """Simple in-memory state store (non-persistent across runs)."""
 
     def __init__(self) -> None:
-        self._entries: dict[str, tuple[int, float, bool]] = {}
+        self._entries: dict[str, tuple[MediaInfo, float]] = {}
+        self._lock = threading.Lock()
         self._hits: int = 0
         self._misses: int = 0
-        self._last_scan_time: float | None = None
 
-    def is_unchanged(self, file: Path, size: int, mtime: float) -> bool:
-        key = str(file)
-        if key not in self._entries:
+    def get(self, file: Path, size: int, mtime: float) -> MediaInfo | None:
+        with self._lock:
+            entry = self._entries.get(str(file))
+            if entry is None:
+                self._misses += 1
+                return None
+            info, _ = entry
+            if info.size == size and info.mtime == mtime:
+                self._hits += 1
+                return info
+            del self._entries[str(file)]
             self._misses += 1
-            return False
-        stored_size, stored_mtime, _ = self._entries[key]
-        if stored_size == size and stored_mtime == mtime:
-            self._hits += 1
-            return True
-        # File changed — invalidate stale entry
-        del self._entries[key]
-        self._misses += 1
-        return False
+            return None
 
-    def update(self, file: Path, size: int, mtime: float, matched: bool) -> None:
-        self._entries[str(file)] = (size, mtime, matched)
-        self._last_scan_time = time.time()
+    def put(self, info: MediaInfo) -> None:
+        with self._lock:
+            self._entries[str(info.file_path)] = (info, time.time())
 
     def remove(self, file: Path) -> None:
-        self._entries.pop(str(file), None)
+        with self._lock:
+            self._entries.pop(str(file), None)
+
+    def prune(self, root: Path, keep: set[Path]) -> int:
+        keep_keys = {str(p) for p in keep}
+        with self._lock:
+            stale = [
+                key
+                for key in self._entries
+                if Path(key).is_relative_to(root) and key not in keep_keys
+            ]
+            for key in stale:
+                del self._entries[key]
+        return len(stale)
 
     def get_stats(self) -> dict[str, Any]:
-        total = len(self._entries)
-        matched = sum(1 for _, _, m in self._entries.values() if m)
-        total_probed = self._hits + self._misses
-        hit_rate = self._hits / total_probed if total_probed > 0 else 0.0
-        return {
-            "total_cached": total,
-            "matched": matched,
-            "filtered_out": total - matched,
-            "last_scan_time": self._last_scan_time,
-            "hit_rate": hit_rate,
-        }
+        with self._lock:
+            infos = [info for info, _ in self._entries.values()]
+            last = max((ts for _, ts in self._entries.values()), default=None)
+            hits, misses = self._hits, self._misses
+        return _build_stats(infos, last, hits, misses)
+
+
+def _build_stats(
+    infos: list[MediaInfo], last_probe: float | None, hits: int, misses: int
+) -> dict[str, Any]:
+    languages: Counter[str] = Counter()
+    for info in infos:
+        languages.update({t.language.lower() for t in info.audio_tracks})
+    lookups = hits + misses
+    return {
+        "total_cached": len(infos),
+        "without_audio": sum(1 for i in infos if not i.audio_tracks),
+        "languages": dict(languages.most_common()),
+        "last_probe_time": last_probe,
+        "hit_rate": hits / lookups if lookups else 0.0,
+    }
 
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS file_cache (
-    path      TEXT    PRIMARY KEY,
-    mtime     REAL    NOT NULL,
-    size      INTEGER NOT NULL,
-    has_match INTEGER NOT NULL,
-    checked_at REAL   NOT NULL
+    path       TEXT    PRIMARY KEY,
+    mtime      REAL    NOT NULL,
+    size       INTEGER NOT NULL,
+    tracks     TEXT    NOT NULL,
+    probed_at  REAL    NOT NULL
 );
 """
 
 _UPSERT_SQL = """
-INSERT INTO file_cache (path, mtime, size, has_match, checked_at)
+INSERT INTO file_cache (path, mtime, size, tracks, probed_at)
 VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
-    mtime      = excluded.mtime,
-    size       = excluded.size,
-    has_match  = excluded.has_match,
-    checked_at = excluded.checked_at;
+    mtime     = excluded.mtime,
+    size      = excluded.size,
+    tracks    = excluded.tracks,
+    probed_at = excluded.probed_at;
 """
 
 
+def _delete_database_files(db_path: Path) -> None:
+    """Delete a SQLite database including its WAL and shared-memory files.
+
+    Leaving a stale ``-wal`` file behind would let SQLite replay old pages
+    into the freshly created database.
+    """
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        Path(f"{db_path}{suffix}").unlink(missing_ok=True)
+
+
 class SQLiteStateStore(StateStore):
-    """SQLite-backed persistent state store."""
+    """SQLite-backed persistent state store (thread-safe)."""
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
@@ -114,29 +181,64 @@ class SQLiteStateStore(StateStore):
         self._was_reset: bool = False
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = self._open_or_reset(db_path)
-        self._conn.executescript(_CREATE_TABLE_SQL)
-        self._conn.commit()
         self._check_schema_version()
         _LOGGER.debug("SQLiteStateStore opened: %s", db_path)
 
+    @staticmethod
+    def _connect(db_path: Path) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        return conn
+
+    def _open_or_reset(self, db_path: Path) -> sqlite3.Connection:
+        """Open the database, running an integrity check.
+
+        If the file is corrupt or unreadable, delete it and create a fresh one.
+        """
+        conn: sqlite3.Connection | None = None
+        try:
+            conn = self._connect(db_path)
+            result = conn.execute("PRAGMA quick_check").fetchone()
+            if result and result[0] != "ok":
+                raise sqlite3.DatabaseError(result[0])
+            return conn
+        except sqlite3.DatabaseError as exc:
+            _LOGGER.warning("SQLite database corrupt (%s), resetting: %s", exc, db_path)
+            if conn is not None:
+                conn.close()
+            _delete_database_files(db_path)
+            self._was_reset = True
+            return self._connect(db_path)
+
     def _check_schema_version(self) -> None:
-        """Verify the schema version and reset the database if it doesn't match."""
+        """Create the schema, or rebuild it if the stored version differs.
+
+        The probe cache only holds derived data, so an incompatible schema is
+        simply dropped and rebuilt; files are re-probed on the next scan.
+        Existing symlinks are left alone and reconciled by that scan.
+        """
         row = self._conn.execute("PRAGMA user_version").fetchone()
         current_version = row[0] if row else 0
+        has_table = (
+            self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_cache'"
+            ).fetchone()
+            is not None
+        )
         if current_version != SCHEMA_VERSION:
-            _LOGGER.warning(
-                "Database schema version mismatch (got %d, expected %d), resetting",
-                current_version,
-                SCHEMA_VERSION,
-            )
-            self._conn.close()
-            self._db_path.unlink(missing_ok=True)
-            self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.executescript(_CREATE_TABLE_SQL)
-            self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-            self._conn.commit()
-            self._was_reset = True
+            if has_table:
+                _LOGGER.warning(
+                    "Probe cache schema changed (v%d -> v%d): rebuilding cache, "
+                    "all files will be probed again on the next scan",
+                    current_version,
+                    SCHEMA_VERSION,
+                )
+                self._was_reset = True
+            self._conn.execute("DROP TABLE IF EXISTS file_cache")
+        self._conn.executescript(_CREATE_TABLE_SQL)
+        self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
+        self._conn.commit()
 
     @property
     def db_path(self) -> Path:
@@ -148,54 +250,45 @@ class SQLiteStateStore(StateStore):
         """Return True if the database was reset during initialisation."""
         return self._was_reset
 
-    def _open_or_reset(self, db_path: Path) -> sqlite3.Connection:
-        """Open the database, running an integrity check.
-
-        If the file is corrupt or unreadable, delete it and create a fresh one.
-        """
-        try:
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            conn.execute("PRAGMA journal_mode=WAL")
-            result = conn.execute("PRAGMA integrity_check").fetchone()
-            if result and result[0] != "ok":
-                raise sqlite3.DatabaseError(result[0])
-            return conn
-        except sqlite3.DatabaseError as exc:
-            _LOGGER.warning("SQLite database corrupt (%s), resetting: %s", exc, db_path)
-            try:
-                conn.close()
-            except Exception:
-                pass
-            db_path.unlink(missing_ok=True)
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            conn.execute("PRAGMA journal_mode=WAL")
-            self._was_reset = True
-            return conn
-
-    def is_unchanged(self, file: Path, size: int, mtime: float) -> bool:
+    def get(self, file: Path, size: int, mtime: float) -> MediaInfo | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT mtime, size FROM file_cache WHERE path = ?",
+                "SELECT mtime, size, tracks FROM file_cache WHERE path = ?",
                 (str(file),),
             ).fetchone()
             if row is None:
                 self._misses += 1
-                return False
-            stored_mtime, stored_size = row
+                return None
+            stored_mtime, stored_size, tracks = row
             if stored_mtime == mtime and stored_size == size:
-                self._hits += 1
-                return True
-            # File changed — invalidate stale entry
+                try:
+                    audio_tracks = _decode_tracks(tracks)
+                except ValueError, TypeError:
+                    _LOGGER.warning("Discarding unreadable cache entry for '%s'", file)
+                else:
+                    self._hits += 1
+                    return MediaInfo(
+                        file_path=file,
+                        audio_tracks=audio_tracks,
+                        size=size,
+                        mtime=mtime,
+                    )
             self._conn.execute("DELETE FROM file_cache WHERE path = ?", (str(file),))
             self._conn.commit()
             self._misses += 1
-            return False
+            return None
 
-    def update(self, file: Path, size: int, mtime: float, matched: bool) -> None:
+    def put(self, info: MediaInfo) -> None:
         with self._lock:
             self._conn.execute(
                 _UPSERT_SQL,
-                (str(file), mtime, size, 1 if matched else 0, time.time()),
+                (
+                    str(info.file_path),
+                    info.mtime,
+                    info.size,
+                    _encode_tracks(info.audio_tracks),
+                    time.time(),
+                ),
             )
             self._conn.commit()
 
@@ -204,35 +297,44 @@ class SQLiteStateStore(StateStore):
             self._conn.execute("DELETE FROM file_cache WHERE path = ?", (str(file),))
             self._conn.commit()
 
+    def prune(self, root: Path, keep: set[Path]) -> int:
+        keep_keys = {str(p) for p in keep}
+        with self._lock:
+            rows = self._conn.execute("SELECT path FROM file_cache").fetchall()
+            stale = [
+                (path,)
+                for (path,) in rows
+                if path not in keep_keys and Path(path).is_relative_to(root)
+            ]
+            if stale:
+                self._conn.executemany("DELETE FROM file_cache WHERE path = ?", stale)
+                self._conn.commit()
+        return len(stale)
+
     def close(self) -> None:
         """Close the underlying database connection."""
         with self._lock:
             self._conn.close()
 
     def reset(self) -> None:
-        """Close the connection, delete the DB file, and reinitialise."""
-        self.close()
-        self._db_path.unlink(missing_ok=True)
-        self.__init__(self._db_path)  # type: ignore[misc]
+        """Delete all cached entries."""
+        with self._lock:
+            self._conn.execute("DELETE FROM file_cache")
+            self._conn.commit()
 
     def get_stats(self) -> dict[str, Any]:
         with self._lock:
-            total: int = self._conn.execute(
-                "SELECT COUNT(*) FROM file_cache"
-            ).fetchone()[0]
-            matched: int = self._conn.execute(
-                "SELECT COUNT(*) FROM file_cache WHERE has_match = 1"
-            ).fetchone()[0]
-            last_scan_row = self._conn.execute(
-                "SELECT MAX(checked_at) FROM file_cache"
-            ).fetchone()
-            last_scan_time: float | None = last_scan_row[0] if last_scan_row else None
-            total_probed = self._hits + self._misses
-            hit_rate = self._hits / total_probed if total_probed > 0 else 0.0
-        return {
-            "total_cached": total,
-            "matched": matched,
-            "filtered_out": total - matched,
-            "last_scan_time": last_scan_time,
-            "hit_rate": hit_rate,
-        }
+            rows = self._conn.execute(
+                "SELECT path, size, mtime, tracks, probed_at FROM file_cache"
+            ).fetchall()
+            hits, misses = self._hits, self._misses
+        infos: list[MediaInfo] = []
+        last: float | None = None
+        for path, size, mtime, tracks, probed_at in rows:
+            try:
+                audio = _decode_tracks(tracks)
+            except ValueError, TypeError:
+                continue
+            infos.append(MediaInfo(Path(path), audio, size, mtime))
+            last = probed_at if last is None else max(last, probed_at)
+        return _build_stats(infos, last, hits, misses)

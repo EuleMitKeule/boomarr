@@ -1,0 +1,21 @@
+{{- with .Values.persistence.config }}
+{{- if and .enabled (not .existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "boomarr.fullname" $ }}-config
+  labels:
+    {{- include "boomarr.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .accessMode }}
+  {{- if .storageClass }}
+  storageClassName: {{ .storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- end }}

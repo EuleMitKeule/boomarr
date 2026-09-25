@@ -47,6 +47,7 @@ class ScanResult:
     created: int = 0
     removed: int = 0
     unchanged: int = 0
+    probed: int = 0
     skipped: int = 0
     filtered: int = 0
     errors: int = 0
@@ -57,6 +58,7 @@ class ScanResult:
             self.created
             + self.removed
             + self.unchanged
+            + self.probed
             + self.skipped
             + self.filtered
             + self.errors
@@ -67,6 +69,7 @@ class ScanResult:
         self.created += other.created
         self.removed += other.removed
         self.unchanged += other.unchanged
+        self.probed += other.probed
         self.skipped += other.skipped
         self.filtered += other.filtered
         self.errors += other.errors

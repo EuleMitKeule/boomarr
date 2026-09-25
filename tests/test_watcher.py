@@ -1,6 +1,7 @@
 """Tests for the trigger config, pipeline trigger building, and watcher."""
 
 import asyncio
+import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -250,7 +251,7 @@ class TestWatcher:
     def test_single_event_triggers_scan(self) -> None:
         results: list[ScanResult] = []
 
-        def scan_all() -> ScanResult:
+        def scan_all(cancel: threading.Event) -> ScanResult:
             r = ScanResult(created=1)
             results.append(r)
             return r
@@ -267,7 +268,7 @@ class TestWatcher:
                 await asyncio.sleep(0.3)
                 watcher._request_shutdown()
 
-            asyncio.create_task(_shutdown_soon())
+            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
             await watcher._run()
 
         asyncio.run(_run())
@@ -276,7 +277,7 @@ class TestWatcher:
     def test_debounce_collapses_events(self) -> None:
         call_count = 0
 
-        def scan_all() -> ScanResult:
+        def scan_all(cancel: threading.Event) -> ScanResult:
             nonlocal call_count
             call_count += 1
             return ScanResult()
@@ -298,7 +299,7 @@ class TestWatcher:
                 await asyncio.sleep(0.5)
                 watcher._request_shutdown()
 
-            asyncio.create_task(_shutdown_soon())
+            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
             await watcher._run()
 
         asyncio.run(_run())
@@ -308,7 +309,7 @@ class TestWatcher:
     def test_shutdown_event_stops_worker(self) -> None:
         watcher = Watcher(
             triggers=[],
-            scan_callback=lambda: ScanResult(),
+            scan_callback=lambda cancel: ScanResult(),
             debounce_seconds=0.05,
         )
 
@@ -322,7 +323,7 @@ class TestWatcher:
         """Empty trigger list should exit without blocking."""
         watcher = Watcher(
             triggers=[],
-            scan_callback=lambda: ScanResult(),
+            scan_callback=lambda cancel: ScanResult(),
         )
 
         async def _run() -> None:
@@ -330,7 +331,7 @@ class TestWatcher:
                 await asyncio.sleep(0.1)
                 watcher._request_shutdown()
 
-            asyncio.create_task(_shutdown_soon())
+            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
             await watcher._run()
 
         asyncio.run(_run())

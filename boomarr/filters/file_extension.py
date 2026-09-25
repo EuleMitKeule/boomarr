@@ -16,7 +16,10 @@ class FileExtensionFilter(PreProbeFilter):
     """
 
     def __init__(self, extensions: frozenset[str] = MEDIA_EXTENSIONS) -> None:
-        self._extensions = extensions
+        self._extensions = frozenset(
+            ext if ext.startswith(".") else f".{ext}"
+            for ext in (e.strip().lower() for e in extensions)
+        )
 
     def matches(self, file_path: Path) -> bool:
         suffix = file_path.suffix.lower()

@@ -5,6 +5,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from boomarr.config import (
     Config,
@@ -80,7 +81,7 @@ class TestLoggingConfig:
         assert cfg.file_name is None
 
     def test_invalid_level_raises(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             LoggingConfig(level="NOTREAL")  # type: ignore[arg-type]
 
     def test_level_coercion_when_already_enum(self) -> None:
@@ -115,7 +116,7 @@ class TestGeneralConfig:
         assert cfg.tz == "America/New_York"
 
     def test_invalid_timezone_raises(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             GeneralConfig(tz="Not/A_Timezone")
 
     def test_empty_string_tz_becomes_default(self) -> None:
@@ -245,7 +246,14 @@ class TestLoadConfigFileCreation:
         load_config(tmp_path, "config.yml")
         with (tmp_path / "config.yml").open() as f:
             data = yaml.safe_load(f)
-        assert data is None
+        # The template only activates the global output path; libraries are
+        # commented out so a fresh install never scans guessed paths.
+        assert data == {"output_path": "/media/filtered"}
+
+    def test_template_matches_repository_example(self) -> None:
+        root = Path(__file__).parent.parent
+        bundled = root / "boomarr" / "config.example.yml"
+        assert bundled.read_text() == (root / "config.example.yml").read_text()
 
     def test_auto_created_config_causes_no_env_var_warnings(
         self,
