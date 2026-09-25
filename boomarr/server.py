@@ -26,7 +26,7 @@ import hmac
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from urllib.parse import parse_qs, urlsplit
 
 from boomarr.metrics import METRICS
@@ -59,7 +59,7 @@ class _Text:
         self.text = text
 
 
-_Payload = dict[str, object] | _Text
+_Payload = Mapping[str, object] | _Text
 
 
 class _HttpError(Exception):
@@ -137,6 +137,8 @@ class HttpServer(TriggerSource):
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
         peer = writer.get_extra_info("peername")
+        status: int
+        payload: _Payload
         try:
             try:
                 status, payload = await asyncio.wait_for(

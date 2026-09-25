@@ -158,7 +158,7 @@ boomarr version
 ```bash
 uv sync --all-groups
 uv run pytest                       # needs ffprobe for the integration test
-uv run ruff check . && uv run ruff format --check . && uv run mypy --strict .
+uv run ruff check . && uv run ruff format --check . && uv run ty check
 docker compose -f docker-compose.dev.yml up --build
 ```
 

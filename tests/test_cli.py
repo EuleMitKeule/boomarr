@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 import yaml
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from boomarr.__main__ import app
 from boomarr.models import AudioTrack, MediaInfo, ScanResult
@@ -58,7 +58,7 @@ def setup(tmp_path: Path) -> tuple[Path, Path, Path]:
     return config_dir, media, output
 
 
-def _invoke(*args: str) -> object:
+def _invoke(*args: str) -> Result:
     with (
         patch.object(FFProbeProber, "probe", _fake_probe),
         patch.object(FFProbeProber, "check_available", lambda self: None),
@@ -73,14 +73,14 @@ class TestScanCommand:
     def test_scan_creates_links(self, setup: tuple[Path, Path, Path]) -> None:
         config_dir, _, output = setup
         result = _invoke("scan", "--config-dir", str(config_dir))
-        assert result.exit_code == 0, result.output  # type: ignore[attr-defined]
+        assert result.exit_code == 0, result.output
         assert (output / "German" / "Film.DE.mkv").is_symlink()
         assert not (output / "German" / "Film.EN.mkv").exists()
 
     def test_scan_dry_run(self, setup: tuple[Path, Path, Path]) -> None:
         config_dir, _, output = setup
         result = _invoke("scan", "--config-dir", str(config_dir), "--dry-run")
-        assert result.exit_code == 0, result.output  # type: ignore[attr-defined]
+        assert result.exit_code == 0, result.output
         assert not output.exists()
 
     def test_scan_fails_fast_without_ffprobe(

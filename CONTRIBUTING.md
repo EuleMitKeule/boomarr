@@ -19,7 +19,7 @@ Every pull request must pass:
 ```bash
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy --strict .
+uv run ty check
 uv run pytest
 ```
 
