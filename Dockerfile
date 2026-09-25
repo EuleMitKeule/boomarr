@@ -7,7 +7,7 @@ ARG PYTHON_VERSION=3.14
 # shared libraries into the image.
 FROM mwader/static-ffmpeg:8.0 AS ffmpeg
 
-FROM ghcr.io/astral-sh/uv:0.9 AS uv
+FROM ghcr.io/astral-sh/uv:0.12 AS uv
 
 # ---------------------------------------------------------------------------
 # Build stage: resolve dependencies strictly from uv.lock
