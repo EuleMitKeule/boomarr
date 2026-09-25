@@ -16,25 +16,45 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from boomarr.models import AudioTrack, MediaInfo
+from boomarr.models import AudioTrack, MediaInfo, VideoTrack
 
 _LOGGER = logging.getLogger(__name__)
 
 SCHEMA_VERSION: int = 3
 
 
-def _encode_tracks(tracks: list[AudioTrack]) -> str:
+def _encode_tracks(info: MediaInfo) -> str:
     return json.dumps(
-        [[t.index, t.language, t.codec, t.title] for t in tracks],
+        {
+            "a": [
+                [t.index, t.language, t.codec, t.title, t.channels]
+                for t in info.audio_tracks
+            ],
+            "v": [[v.index, v.codec, v.width, v.height] for v in info.video_tracks],
+        },
         separators=(",", ":"),
     )
 
 
-def _decode_tracks(raw: str) -> list[AudioTrack]:
-    return [
-        AudioTrack(index=index, language=language, codec=codec, title=title)
-        for index, language, codec, title in json.loads(raw)
+def _decode_tracks(raw: str) -> tuple[list[AudioTrack], list[VideoTrack]]:
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("unexpected cache entry format")
+    audio = [
+        AudioTrack(
+            index=entry[0],
+            language=entry[1],
+            codec=entry[2],
+            title=entry[3],
+            channels=entry[4] if len(entry) > 4 else None,
+        )
+        for entry in data.get("a", [])
     ]
+    video = [
+        VideoTrack(index=i, codec=codec, width=width, height=height)
+        for i, codec, width, height in data.get("v", [])
+    ]
+    return audio, video
 
 
 class StateStore(abc.ABC):
@@ -262,14 +282,15 @@ class SQLiteStateStore(StateStore):
             stored_mtime, stored_size, tracks = row
             if stored_mtime == mtime and stored_size == size:
                 try:
-                    audio_tracks = _decode_tracks(tracks)
-                except ValueError, TypeError:
+                    audio_tracks, video_tracks = _decode_tracks(tracks)
+                except ValueError, TypeError, IndexError:
                     _LOGGER.warning("Discarding unreadable cache entry for '%s'", file)
                 else:
                     self._hits += 1
                     return MediaInfo(
                         file_path=file,
                         audio_tracks=audio_tracks,
+                        video_tracks=video_tracks,
                         size=size,
                         mtime=mtime,
                     )
@@ -286,7 +307,7 @@ class SQLiteStateStore(StateStore):
                     str(info.file_path),
                     info.mtime,
                     info.size,
-                    _encode_tracks(info.audio_tracks),
+                    _encode_tracks(info),
                     time.time(),
                 ),
             )
@@ -332,9 +353,9 @@ class SQLiteStateStore(StateStore):
         last: float | None = None
         for path, size, mtime, tracks, probed_at in rows:
             try:
-                audio = _decode_tracks(tracks)
-            except ValueError, TypeError:
+                audio, video = _decode_tracks(tracks)
+            except ValueError, TypeError, IndexError:
                 continue
-            infos.append(MediaInfo(Path(path), audio, size, mtime))
+            infos.append(MediaInfo(Path(path), audio, size, mtime, video))
             last = probed_at if last is None else max(last, probed_at)
         return _build_stats(infos, last, hits, misses)

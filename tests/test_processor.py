@@ -1168,3 +1168,72 @@ class TestPipelineFactoryExtended:
         pipeline = factory.for_scan(config, library)
         expected = Path("/per-library").resolve() / "movies-de"
         assert pipeline.symlink_libraries[0].output_path == expected
+
+
+class TestRemovalGuard:
+    @staticmethod
+    def _setup(tmp_path: Path, count: int) -> tuple[LibraryConfig, Path, list[Path]]:
+        library = _make_library(tmp_path)
+        out = tmp_path / "output-de"
+        files = [library.input_path / f"m{i}.mkv" for i in range(count)]
+        for f in files:
+            f.touch()
+        return library, out, files
+
+    @staticmethod
+    def _prober(files: list[Path], lang: str) -> StubProber:
+        return StubProber(
+            {
+                str(f): MediaInfo(f, [AudioTrack(index=0, language=lang, codec="aac")])
+                for f in files
+            }
+        )
+
+    def _run(
+        self, library: LibraryConfig, out: Path, prober: StubProber, **kwargs: object
+    ) -> ScanResult:
+        from boomarr.models import RemovalGuard
+
+        pipeline = Pipeline(
+            probers=[prober],
+            symlink_libraries=[_resolved_sym_lib(out)],
+            removal_guard=RemovalGuard(max_percent=50, min_count=5),
+            **kwargs,  # type: ignore[arg-type]
+        )
+        return LibraryProcessor(pipeline).process_library(library)
+
+    def test_mass_removal_is_blocked(self, tmp_path: Path) -> None:
+        library, out, files = self._setup(tmp_path, 10)
+        self._run(library, out, self._prober(files, "de"))
+        result = self._run(library, out, self._prober(files, "en"))
+        assert result.blocked == 1
+        assert result.removed == 0
+        assert len(list(out.iterdir())) == 10
+
+    def test_force_bypasses_guard(self, tmp_path: Path) -> None:
+        library, out, files = self._setup(tmp_path, 10)
+        self._run(library, out, self._prober(files, "de"))
+        result = self._run(library, out, self._prober(files, "en"), force=True)
+        assert result.blocked == 0
+        assert result.removed == 10
+
+    def test_small_removals_are_allowed(self, tmp_path: Path) -> None:
+        library, out, files = self._setup(tmp_path, 4)
+        self._run(library, out, self._prober(files, "de"))
+        result = self._run(library, out, self._prober(files, "en"))
+        assert result.removed == 4
+
+    def test_guard_model(self) -> None:
+        from boomarr.models import RemovalGuard
+
+        guard = RemovalGuard(max_percent=50, min_count=20)
+        assert not guard.blocks(20, 21)
+        assert guard.blocks(21, 40)
+        assert not guard.blocks(21, 100)
+        assert not guard.blocks(0, 0)
+
+    def test_config_disable(self) -> None:
+        from boomarr.config import RemovalGuardConfig
+
+        assert RemovalGuardConfig(max_percent=100).to_model() is None
+        assert RemovalGuardConfig().to_model() is not None

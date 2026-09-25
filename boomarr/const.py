@@ -33,6 +33,10 @@ class PostProbeFilterType(StrEnum):
     """Discriminator values for post-probe filter config types."""
 
     AUDIO_LANGUAGE = "audio_language"
+    RESOLUTION = "resolution"
+    VIDEO_CODEC = "video_codec"
+    AUDIO_CODEC = "audio_codec"
+    AUDIO_CHANNELS = "audio_channels"
 
 
 class DatabaseType(StrEnum):
@@ -143,6 +147,9 @@ DEFAULT_FFPROBE_PATH: str = "ffprobe"
 DEFAULT_FFPROBE_TIMEOUT: float = 60.0
 
 DEFAULT_PROBE_WORKERS: int = 4
+
+DEFAULT_REMOVAL_GUARD_MAX_PERCENT: float = 50.0
+DEFAULT_REMOVAL_GUARD_MIN_COUNT: int = 20
 
 HEARTBEAT_INTERVAL: float = 30.0
 HEARTBEAT_MAX_AGE: float = 120.0

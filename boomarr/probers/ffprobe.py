@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from boomarr.const import DEFAULT_FFPROBE_PATH, DEFAULT_FFPROBE_TIMEOUT
-from boomarr.models import AudioTrack, MediaInfo
+from boomarr.models import AudioTrack, MediaInfo, VideoTrack
 from boomarr.probers.base import MediaProber
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,7 +20,8 @@ _FFPROBE_ARGS = [
     "-print_format",
     "json",
     "-show_entries",
-    "stream=index,codec_type,codec_name:stream_tags=language,title",
+    "stream=index,codec_type,codec_name,channels,width,height"
+    ":stream_tags=language,title:stream_disposition=attached_pic",
     "-analyzeduration",
     "0",
     "-probesize",
@@ -93,14 +94,13 @@ class FFProbeProber(MediaProber):
             _LOGGER.error("Failed to parse FFprobe output for '%s': %s", file, exc)
             return None
 
-        audio_tracks = _extract_audio_tracks(data)
-
         stat = file.stat()
         return MediaInfo(
             file_path=file,
-            audio_tracks=audio_tracks,
+            audio_tracks=_extract_audio_tracks(data),
             size=stat.st_size,
             mtime=stat.st_mtime,
+            video_tracks=_extract_video_tracks(data),
         )
 
 
@@ -118,6 +118,33 @@ def _extract_audio_tracks(data: dict[str, Any]) -> list[AudioTrack]:
                 language=language,
                 codec=stream.get("codec_name", "unknown"),
                 title=tags.get("title"),
+                channels=_int_or_none(stream.get("channels")),
+            )
+        )
+    return tracks
+
+
+def _int_or_none(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None  # type: ignore[call-overload]
+    except TypeError, ValueError:
+        return None
+
+
+def _extract_video_tracks(data: dict[str, Any]) -> list[VideoTrack]:
+    """Extract real video tracks (no embedded cover art) from FFprobe JSON."""
+    tracks: list[VideoTrack] = []
+    for stream in data.get("streams", []):
+        if stream.get("codec_type") != "video":
+            continue
+        if stream.get("disposition", {}).get("attached_pic"):
+            continue
+        tracks.append(
+            VideoTrack(
+                index=stream.get("index", 0),
+                codec=stream.get("codec_name", "unknown"),
+                width=_int_or_none(stream.get("width")),
+                height=_int_or_none(stream.get("height")),
             )
         )
     return tracks

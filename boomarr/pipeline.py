@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from boomarr.config import (
+    AudioChannelsFilterConfig,
+    AudioCodecFilterConfig,
     Config,
     FFProbeProberConfig,
     LibraryConfig,
@@ -26,9 +28,11 @@ from boomarr.config import (
     PreProbeFilterType,
     ProberConfig,
     ProberType,
+    ResolutionFilterConfig,
     ScheduleTriggerConfig,
     SQLiteDatabaseConfig,
     TriggerConfig,
+    VideoCodecFilterConfig,
     WebhookTriggerConfig,
 )
 from boomarr.const import (
@@ -40,6 +44,13 @@ from boomarr.const import (
 from boomarr.filters.audio_language import AudioLanguageFilter
 from boomarr.filters.base import PostProbeFilter, PreProbeFilter
 from boomarr.filters.file_extension import FileExtensionFilter
+from boomarr.filters.media import (
+    AudioChannelsFilter,
+    AudioCodecFilter,
+    ResolutionFilter,
+    VideoCodecFilter,
+)
+from boomarr.models import RemovalGuard
 from boomarr.probers.base import MediaProber
 from boomarr.probers.ffprobe import FFProbeProber
 from boomarr.state import InMemoryStateStore, SQLiteStateStore, StateStore
@@ -84,6 +95,8 @@ class Pipeline:
     ignore_patterns: tuple[str, ...] = DEFAULT_IGNORE_PATTERNS
     relative_symlinks: bool = False
     probe_workers: int = DEFAULT_PROBE_WORKERS
+    removal_guard: RemovalGuard | None = None
+    force: bool = False
 
 
 class PipelineFactory:
@@ -96,10 +109,15 @@ class PipelineFactory:
     """
 
     def __init__(
-        self, *, state: StateStore | None = None, dry_run: bool = False
+        self,
+        *,
+        state: StateStore | None = None,
+        dry_run: bool = False,
+        force: bool = False,
     ) -> None:
         self._state = state or InMemoryStateStore()
         self._dry_run = dry_run
+        self._force = force
 
     @staticmethod
     def build_state_store(config: Config) -> StateStore:
@@ -194,6 +212,32 @@ class PipelineFactory:
                     aliases=aliases,
                     suffix=config.suffix,
                     mode=getattr(config, "mode", AudioLanguageMatchMode.ANY),
+                    invert=getattr(config, "invert", False),
+                )
+            case PostProbeFilterType.RESOLUTION:
+                assert isinstance(config, ResolutionFilterConfig)  # noqa: S101
+                return ResolutionFilter(
+                    min_height=config.min_height,
+                    max_height=config.max_height,
+                    suffix=config.suffix,
+                    invert=config.invert,
+                )
+            case PostProbeFilterType.VIDEO_CODEC:
+                assert isinstance(config, VideoCodecFilterConfig)  # noqa: S101
+                return VideoCodecFilter(
+                    config.codecs, suffix=config.suffix, invert=config.invert
+                )
+            case PostProbeFilterType.AUDIO_CODEC:
+                assert isinstance(config, AudioCodecFilterConfig)  # noqa: S101
+                return AudioCodecFilter(
+                    config.codecs, suffix=config.suffix, invert=config.invert
+                )
+            case PostProbeFilterType.AUDIO_CHANNELS:
+                assert isinstance(config, AudioChannelsFilterConfig)  # noqa: S101
+                return AudioChannelsFilter(
+                    min_channels=config.min_channels,
+                    suffix=config.suffix,
+                    invert=config.invert,
                 )
             case _:
                 raise ValueError(f"Unknown post-probe filter type: {config.type!r}")
@@ -240,6 +284,8 @@ class PipelineFactory:
             ignore_patterns=tuple(config.ignore_patterns_for(library)),
             relative_symlinks=config.relative_symlinks_for(library),
             probe_workers=config.probe_workers,
+            removal_guard=config.removal_guard.to_model(),
+            force=self._force,
         )
 
     def for_watch(self, config: Config, library: LibraryConfig) -> Pipeline:

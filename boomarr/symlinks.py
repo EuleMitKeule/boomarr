@@ -7,11 +7,20 @@ never deleted; only symlinks (and directories left empty by removing them).
 
 import logging
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
 
 _TMP_SUFFIX = ".boomarr-tmp"
+
+
+@dataclass
+class RemovalPlan:
+    """Symlinks a reconciliation would remove, plus the number of existing links."""
+
+    removals: list[tuple[Path, str]] = field(default_factory=list)
+    existing: int = 0
 
 
 def link_target(source: Path, dest: Path, *, relative: bool = False) -> str:
@@ -124,9 +133,21 @@ class SymlinkManager:
 
         Returns the number of removed symlinks.
         """
+        plan = self.plan_removals(output_dir, expected, owned_root, preserve)
+        return self.apply_removals(output_dir, plan.removals)
+
+    def plan_removals(
+        self,
+        output_dir: Path,
+        expected: set[Path],
+        owned_root: Path,
+        preserve: set[Path] | None = None,
+    ) -> RemovalPlan:
+        """Compute which symlinks :meth:`reconcile` would remove."""
         keep = expected | (preserve or set())
-        removed = 0
+        plan = RemovalPlan()
         for link in self.iter_links(output_dir):
+            plan.existing += 1
             if link in keep:
                 continue
             try:
@@ -136,8 +157,12 @@ class SymlinkManager:
             broken = not link.exists()
             if not broken and not target.is_relative_to(owned_root):
                 continue
-            if self._remove(link, "stale" if broken else "unwanted"):
-                removed += 1
+            plan.removals.append((link, "stale" if broken else "unwanted"))
+        return plan
+
+    def apply_removals(self, output_dir: Path, removals: list[tuple[Path, str]]) -> int:
+        """Remove the planned symlinks and prune directories left empty."""
+        removed = sum(1 for link, reason in removals if self._remove(link, reason))
         self.prune_empty_dirs(output_dir)
         return removed
 

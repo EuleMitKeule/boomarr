@@ -31,8 +31,9 @@ class AudioLanguageFilter(PostProbeFilter):
         aliases: dict[str, list[str]] | None = None,
         suffix: str | None = None,
         mode: AudioLanguageMatchMode = AudioLanguageMatchMode.ANY,
+        invert: bool = False,
     ) -> None:
-        super().__init__(suffix=suffix)
+        super().__init__(suffix=suffix, invert=invert)
         self._languages = [lang.strip().lower() for lang in languages]
         self._mode = mode
         # One accepted-code set per configured language.
@@ -44,7 +45,7 @@ class AudioLanguageFilter(PostProbeFilter):
             self._groups[lang] = group
         self._match_languages: set[str] = set().union(*self._groups.values())
 
-    def matches(self, info: MediaInfo) -> bool:
+    def evaluate(self, info: MediaInfo) -> bool:
         if not info.audio_tracks:
             _LOGGER.debug(
                 "No audio tracks found in '%s', skipping", info.file_path.name

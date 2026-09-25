@@ -221,6 +221,13 @@ def scan(
             help="Only log which symlinks would be created or removed.",
         ),
     ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Bypass the removal guard for this scan (e.g. after changing filters).",
+        ),
+    ] = False,
 ) -> None:
     """Trigger a one-shot full library scan.
 
@@ -240,7 +247,7 @@ def scan(
     _check_probers(config)
 
     state = PipelineFactory.build_state_store(config)
-    factory = PipelineFactory(state=state, dry_run=dry_run)
+    factory = PipelineFactory(state=state, dry_run=dry_run, force=force)
     try:
         total = _scan_all(config, factory, threading.Event())
     finally:
@@ -248,7 +255,7 @@ def scan(
 
     _LOGGER.info(
         "Scan complete%s: %d created, %d removed, %d unchanged, %d probed, "
-        "%d skipped (cached), %d filtered (non-media), %d errors",
+        "%d skipped (cached), %d filtered (non-media), %d errors, %d blocked",
         " (dry run, nothing changed)" if dry_run else "",
         total.created,
         total.removed,
@@ -257,6 +264,7 @@ def scan(
         total.skipped,
         total.filtered,
         total.errors,
+        total.blocked,
     )
 
 

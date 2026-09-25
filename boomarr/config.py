@@ -61,6 +61,8 @@ from boomarr.const import (
     DEFAULT_PROBE_WORKERS,
     DEFAULT_PROBERS,
     DEFAULT_PUID,
+    DEFAULT_REMOVAL_GUARD_MAX_PERCENT,
+    DEFAULT_REMOVAL_GUARD_MIN_COUNT,
     DEFAULT_SCHEDULE_INTERVAL,
     DEFAULT_SCHEDULE_RUN_ON_START,
     DEFAULT_SIDECAR_EXTENSIONS,
@@ -81,6 +83,8 @@ from boomarr.const import (
     ProberType,
     TriggerType,
 )
+from boomarr.filters.media import normalize_codec
+from boomarr.models import RemovalGuard
 
 __all__ = [
     "AnyDatabaseConfig",
@@ -311,6 +315,7 @@ class PostProbeFilterConfig(_ConfigModel):
 
     type: PostProbeFilterType
     suffix: str | None = None
+    invert: bool = False
 
     @field_validator("suffix", mode="after")
     @classmethod
@@ -321,7 +326,10 @@ class PostProbeFilterConfig(_ConfigModel):
 
     def effective_suffix(self) -> str:
         """Return the suffix used for automatic output directory naming."""
-        return self.suffix if self.suffix is not None else self.default_suffix()
+        if self.suffix is not None:
+            return self.suffix
+        base = self.default_suffix()
+        return f"not-{base}" if self.invert else base
 
     def default_suffix(self) -> str:
         """Return the suffix derived from the filter settings."""
@@ -369,7 +377,106 @@ class AudioLanguageFilterConfig(PostProbeFilterConfig):
         return v
 
 
-AnyPostProbeFilterConfig = AudioLanguageFilterConfig
+_RESOLUTION_ALIASES: dict[str, int] = {
+    "sd": 480,
+    "hd": 720,
+    "fhd": 1080,
+    "uhd": 2160,
+    "4k": 2160,
+    "8k": 4320,
+}
+
+
+def _parse_height(value: object) -> object:
+    """Accept ``1080``, ``"1080p"``, ``"4k"`` or ``"uhd"``."""
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in _RESOLUTION_ALIASES:
+            return _RESOLUTION_ALIASES[text]
+        text = text.removesuffix("p")
+        if text.isdigit():
+            return int(text)
+    return value
+
+
+class ResolutionFilterConfig(PostProbeFilterConfig):
+    """Video resolution bounds (inclusive, by 16:9-equivalent height)."""
+
+    type: Literal[PostProbeFilterType.RESOLUTION] = PostProbeFilterType.RESOLUTION
+    min_height: int | None = Field(default=None, gt=0)
+    max_height: int | None = Field(default=None, gt=0)
+
+    @field_validator("min_height", "max_height", mode="before")
+    @classmethod
+    def _coerce_height(cls, v: object) -> object:
+        return _parse_height(v)
+
+    @model_validator(mode="after")
+    def _validate_bounds(self) -> ResolutionFilterConfig:
+        if self.min_height is None and self.max_height is None:
+            raise ValueError("resolution filter needs min_height and/or max_height")
+        if (
+            self.min_height is not None
+            and self.max_height is not None
+            and self.min_height > self.max_height
+        ):
+            raise ValueError("min_height must not be greater than max_height")
+        return self
+
+    def default_suffix(self) -> str:
+        if self.min_height is not None and self.max_height is not None:
+            return f"{self.min_height}p-{self.max_height}p"
+        if self.min_height is not None:
+            return f"{self.min_height}p-plus"
+        return f"max-{self.max_height}p"
+
+
+class _CodecFilterConfig(PostProbeFilterConfig):
+    codecs: list[str]
+
+    @field_validator("codecs", mode="after")
+    @classmethod
+    def _validate_codecs(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("at least one codec is required")
+        return v
+
+    def default_suffix(self) -> str:
+        return "-".join(sorted({normalize_codec(c) for c in self.codecs}))
+
+
+class VideoCodecFilterConfig(_CodecFilterConfig):
+    """Matches files with a video track in one of ``codecs`` (hevc, h264, av1…)."""
+
+    type: Literal[PostProbeFilterType.VIDEO_CODEC] = PostProbeFilterType.VIDEO_CODEC
+
+
+class AudioCodecFilterConfig(_CodecFilterConfig):
+    """Matches files with an audio track in one of ``codecs`` (truehd, eac3…)."""
+
+    type: Literal[PostProbeFilterType.AUDIO_CODEC] = PostProbeFilterType.AUDIO_CODEC
+
+
+class AudioChannelsFilterConfig(PostProbeFilterConfig):
+    """Matches files with an audio track of at least ``min_channels`` channels."""
+
+    type: Literal[PostProbeFilterType.AUDIO_CHANNELS] = (
+        PostProbeFilterType.AUDIO_CHANNELS
+    )
+    min_channels: int = Field(gt=0)
+
+    def default_suffix(self) -> str:
+        return f"{self.min_channels}ch"
+
+
+AnyPostProbeFilterConfig = Annotated[
+    AudioLanguageFilterConfig
+    | ResolutionFilterConfig
+    | VideoCodecFilterConfig
+    | AudioCodecFilterConfig
+    | AudioChannelsFilterConfig,
+    Field(discriminator="type"),
+]
 
 
 class TriggerConfig(_ConfigModel):
@@ -442,6 +549,25 @@ class WatchConfig(_ConfigModel):
         if v < 0:
             raise ValueError("debounce must be non-negative")
         return v
+
+
+class RemovalGuardConfig(_ConfigModel):
+    """Protection against accidental mass removal of symlinks.
+
+    A scan refuses to remove symlinks from an output directory when it would
+    remove more than ``min_count`` links *and* more than ``max_percent`` of
+    them. ``boomarr scan --force`` overrides it once; ``max_percent: 100``
+    disables it.
+    """
+
+    max_percent: float = Field(default=DEFAULT_REMOVAL_GUARD_MAX_PERCENT, gt=0, le=100)
+    min_count: int = Field(default=DEFAULT_REMOVAL_GUARD_MIN_COUNT, ge=0)
+
+    def to_model(self) -> RemovalGuard | None:
+        """Return the runtime guard, or None when disabled."""
+        if self.max_percent >= 100:
+            return None
+        return RemovalGuard(max_percent=self.max_percent, min_count=self.min_count)
 
 
 class SymlinkLibraryConfig(_ConfigModel):
@@ -608,6 +734,7 @@ class Config(_ConfigModel):
     )
     relative_symlinks: bool = False
     probe_workers: int = Field(default=DEFAULT_PROBE_WORKERS, ge=1, le=64)
+    removal_guard: RemovalGuardConfig = Field(default_factory=RemovalGuardConfig)
 
     _warnings: list[str] = PrivateAttr(default_factory=list)
 

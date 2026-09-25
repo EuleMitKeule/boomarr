@@ -10,6 +10,7 @@ independent of history — changed filters, new symlink libraries or manually
 deleted links are all fixed by the next scan.
 """
 
+import dataclasses
 import fnmatch
 import logging
 import os
@@ -152,11 +153,8 @@ class LibraryProcessor:
                     result.errors += 1
                     _LOGGER.warning("[%d/%d] Could not probe '%s'", idx, total, path)
                     continue
-                cached = MediaInfo(
-                    file_path=path,
-                    audio_tracks=info.audio_tracks,
-                    size=size,
-                    mtime=mtime,
+                cached = dataclasses.replace(
+                    info, file_path=path, size=size, mtime=mtime
                 )
                 state.put(cached)
                 infos[path] = cached
@@ -298,7 +296,26 @@ class LibraryProcessor:
                     _LOGGER.error("Cannot create symlink '%s': %s", dest, exc)
                     result.errors += 1
 
-        removed = symlinks.reconcile(output_path, expected, input_path, preserve)
+        plan = symlinks.plan_removals(output_path, expected, input_path, preserve)
+        guard = self._pipeline.removal_guard
+        if (
+            guard is not None
+            and not self._pipeline.force
+            and guard.blocks(len(plan.removals), plan.existing)
+        ):
+            _LOGGER.error(
+                "Removal guard: refusing to remove %d of %d symlinks (%.0f%%) from "
+                "'%s' (limit %.0f%%). If this is intended (e.g. changed filters), "
+                "run 'boomarr scan --force' once.",
+                len(plan.removals),
+                plan.existing,
+                100 * len(plan.removals) / max(plan.existing, 1),
+                output_path,
+                guard.max_percent,
+            )
+            result.blocked += 1
+            return
+        removed = symlinks.apply_removals(output_path, plan.removals)
         result.removed += removed
         if removed:
             _LOGGER.info("Removed %d symlinks from '%s'", removed, output_path)

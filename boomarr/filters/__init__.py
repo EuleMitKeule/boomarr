@@ -7,10 +7,20 @@ built-in filter implementations (file extensions, audio language).
 from boomarr.filters.audio_language import AudioLanguageFilter
 from boomarr.filters.base import PostProbeFilter, PreProbeFilter
 from boomarr.filters.file_extension import FileExtensionFilter
+from boomarr.filters.media import (
+    AudioChannelsFilter,
+    AudioCodecFilter,
+    ResolutionFilter,
+    VideoCodecFilter,
+)
 
 __all__ = [
+    "AudioChannelsFilter",
+    "AudioCodecFilter",
     "AudioLanguageFilter",
     "FileExtensionFilter",
     "PostProbeFilter",
     "PreProbeFilter",
+    "ResolutionFilter",
+    "VideoCodecFilter",
 ]
