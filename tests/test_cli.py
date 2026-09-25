@@ -71,7 +71,7 @@ def _invoke(*args: str) -> object:
 
 class TestScanCommand:
     def test_scan_creates_links(self, setup: tuple[Path, Path, Path]) -> None:
-        config_dir, media, output = setup
+        config_dir, _, output = setup
         result = _invoke("scan", "--config-dir", str(config_dir))
         assert result.exit_code == 0, result.output  # type: ignore[attr-defined]
         assert (output / "German" / "Film.DE.mkv").is_symlink()
@@ -173,7 +173,7 @@ class TestWatcherResilience:
                 await asyncio.sleep(0.3)
                 watcher._request_shutdown()
 
-            asyncio.create_task(feed())
+            _task = asyncio.create_task(feed())  # noqa: RUF006
             await watcher._run()
 
         asyncio.run(main())
@@ -198,7 +198,7 @@ class TestWatcherResilience:
                 await asyncio.sleep(0.3)
                 watcher._request_shutdown()
 
-            asyncio.create_task(stop())
+            _task = asyncio.create_task(stop())  # noqa: RUF006
             started = time.monotonic()
             await watcher._run()
             assert time.monotonic() - started < 3
@@ -220,7 +220,7 @@ class TestWatcherResilience:
                 await asyncio.sleep(0.2)
                 watcher._request_shutdown()
 
-            asyncio.create_task(stop())
+            _task = asyncio.create_task(stop())  # noqa: RUF006
             await watcher._run()
 
         asyncio.run(main())

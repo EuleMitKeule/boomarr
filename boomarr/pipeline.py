@@ -29,7 +29,6 @@ from boomarr.config import (
     ScheduleTriggerConfig,
     SQLiteDatabaseConfig,
     TriggerConfig,
-    TriggerType,
     WebhookTriggerConfig,
 )
 from boomarr.const import (
@@ -115,17 +114,15 @@ class PipelineFactory:
         """Build trigger source instances from a list of trigger configs."""
         triggers: list[TriggerSource] = []
         for config in configs:
-            match config.type:
-                case TriggerType.SCHEDULE:
-                    assert isinstance(config, ScheduleTriggerConfig)
+            match config:
+                case ScheduleTriggerConfig():
                     triggers.append(
                         ScheduleTrigger(
                             interval=config.interval,
                             run_on_start=config.run_on_start,
                         )
                     )
-                case TriggerType.WEBHOOK:
-                    assert isinstance(config, WebhookTriggerConfig)
+                case WebhookTriggerConfig():
                     triggers.append(
                         WebhookTrigger(
                             host=config.host,

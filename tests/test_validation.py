@@ -242,6 +242,15 @@ class TestTriggers:
     def test_empty_api_key_means_none(self) -> None:
         assert WebhookTriggerConfig.model_validate({"api_key": "  "}).api_key is None
 
+    def test_api_key_from_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WEBHOOK_API_KEY", "from-env")
+        cfg = WebhookTriggerConfig()
+        assert cfg.api_key is not None
+        assert cfg.api_key.get_secret_value() == "from-env"
+        explicit = WebhookTriggerConfig.model_validate({"api_key": "file"})
+        assert explicit.api_key is not None
+        assert explicit.api_key.get_secret_value() == "file"
+
     def test_invalid_port_rejected(self) -> None:
         with pytest.raises(ValueError):
             WebhookTriggerConfig(port=70000)

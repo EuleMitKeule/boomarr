@@ -5,6 +5,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from boomarr.config import (
     Config,
@@ -80,7 +81,7 @@ class TestLoggingConfig:
         assert cfg.file_name is None
 
     def test_invalid_level_raises(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             LoggingConfig(level="NOTREAL")  # type: ignore[arg-type]
 
     def test_level_coercion_when_already_enum(self) -> None:
@@ -115,7 +116,7 @@ class TestGeneralConfig:
         assert cfg.tz == "America/New_York"
 
     def test_invalid_timezone_raises(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             GeneralConfig(tz="Not/A_Timezone")
 
     def test_empty_string_tz_becomes_default(self) -> None:

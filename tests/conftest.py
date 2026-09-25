@@ -5,8 +5,8 @@ Includes setup/teardown logic and mock objects used across multiple test modules
 """
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 

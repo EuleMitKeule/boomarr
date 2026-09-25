@@ -1,0 +1,38 @@
+# Example systemd unit for a bare-metal installation:
+#
+#   pipx install boomarr          # or: uv tool install boomarr
+#   sudo install -m 644 boomarr.service /etc/systemd/system/
+#   sudo systemctl enable --now boomarr
+#
+# Adjust User, paths and ExecStart to your setup. The media user must only
+# have READ access to the source libraries (Boomarr refuses writable sources).
+[Unit]
+Description=Boomarr audio language filter
+Documentation=https://github.com/EuleMitKeule/boomarr
+Wants=network-online.target
+After=network-online.target remote-fs.target
+RequiresMountsFor=/srv/media
+
+[Service]
+Type=simple
+User=boomarr
+Group=media
+Environment=CONFIG_DIR=/etc/boomarr
+Environment=LOG_DIR=/var/log/boomarr
+Environment=HEARTBEAT_FILE=/run/boomarr/heartbeat
+RuntimeDirectory=boomarr
+LogsDirectory=boomarr
+ExecStart=/usr/local/bin/boomarr watch
+Restart=on-failure
+RestartSec=30
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/etc/boomarr /srv/media/filtered
+ReadOnlyPaths=/srv/media
+
+[Install]
+WantedBy=multi-user.target

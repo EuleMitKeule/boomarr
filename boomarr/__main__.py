@@ -23,17 +23,17 @@ from boomarr.const import (
     APP_NAME,
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONFIG_FILE_NAME,
+    DEFAULT_HEARTBEAT_FILE_NAME,
     DEFAULT_LOG_DIR,
     DEFAULT_LOG_FILE_NAME,
     ENV_CONFIG_DIR,
     ENV_CONFIG_FILE_NAME,
     ENV_HEARTBEAT_FILE,
-    HEARTBEAT_MAX_AGE,
-    DEFAULT_HEARTBEAT_FILE_NAME,
     ENV_LOG_DIR,
     ENV_LOG_FILE_NAME,
     ENV_LOG_LEVEL,
     ENV_SKIP_READONLY_CHECK,
+    HEARTBEAT_MAX_AGE,
     VERSION,
     LogLevel,
 )
@@ -455,7 +455,7 @@ def healthcheck(
         age = time.time() - heartbeat.stat().st_mtime
     except OSError:
         typer.echo(f"unhealthy: no heartbeat at '{heartbeat}'", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if age > max_age:
         typer.echo(f"unhealthy: heartbeat is {age:.0f}s old", err=True)
         raise typer.Exit(1)

@@ -6,6 +6,19 @@ license = { file = "LICENSE.md" }
 description = "🔊 Symlink-based audio language filter for Plex & Jellyfin - automatically mirrors your media library, keeping only files with your desired audio tracks."
 readme = "README.md"
 requires-python = ">=3.14"
+keywords = ["plex", "jellyfin", "emby", "symlink", "audio", "language", "ffprobe", "homelab"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Video",
+    "Typing :: Typed",
+]
 version = "0.0.0-dev"
 dependencies = [
     "pydantic>=2.12.5",
@@ -14,6 +27,12 @@ dependencies = [
     "typer>=0.24.1",
     "tzdata>=2025.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/EuleMitKeule/boomarr"
+Documentation = "https://github.com/EuleMitKeule/boomarr/tree/master/docs"
+Issues = "https://github.com/EuleMitKeule/boomarr/issues"
+Changelog = "https://github.com/EuleMitKeule/boomarr/releases"
 
 [project.scripts]
 boomarr = "boomarr.__main__:main"
@@ -30,3 +49,28 @@ dev = [
     "ruff>=0.15.9",
     "types-pyyaml>=6.0.12.20250915",
 ]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "LOG"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "RUF001", # unicode in strings/comments (arrows, dashes) is intentional
+    "RUF002",
+    "RUF003",
+    "S603",   # subprocess without shell is exactly what we want (ffprobe)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S104", "S105", "S106", "S108", "S311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
+
+[tool.coverage.run]
+source = ["boomarr"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "@abc.abstractmethod"]

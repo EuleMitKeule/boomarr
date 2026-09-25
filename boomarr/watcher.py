@@ -172,7 +172,7 @@ class Watcher:
         while not self._shutdown_event.is_set():
             try:
                 return await asyncio.wait_for(self._queue.get(), timeout=0.5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
         return None
 
@@ -190,7 +190,7 @@ class Watcher:
             try:
                 await asyncio.wait_for(self._queue.get(), timeout=remaining)
                 drained += 1
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
         return drained
 

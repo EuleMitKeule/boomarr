@@ -43,6 +43,9 @@ from boomarr.const import (
     CONF_OUTPUT_PATH,
     DEFAULT_DB_DIR,
     DEFAULT_DB_FILE_NAME,
+    DEFAULT_FFPROBE_PATH,
+    DEFAULT_FFPROBE_TIMEOUT,
+    DEFAULT_IGNORE_PATTERNS,
     DEFAULT_LOG_COLOR,
     DEFAULT_LOG_DATE_FORMAT,
     DEFAULT_LOG_DIR,
@@ -55,23 +58,22 @@ from boomarr.const import (
     DEFAULT_LOG_ROTATION_ROTATE_ON_START,
     DEFAULT_PGID,
     DEFAULT_PRE_PROBE_FILTERS,
+    DEFAULT_PROBE_WORKERS,
     DEFAULT_PROBERS,
     DEFAULT_PUID,
     DEFAULT_SCHEDULE_INTERVAL,
     DEFAULT_SCHEDULE_RUN_ON_START,
+    DEFAULT_SIDECAR_EXTENSIONS,
     DEFAULT_TZ,
     DEFAULT_UMASK,
     DEFAULT_WATCH_DEBOUNCE,
-    DEFAULT_FFPROBE_PATH,
-    DEFAULT_FFPROBE_TIMEOUT,
-    DEFAULT_IGNORE_PATTERNS,
-    DEFAULT_PROBE_WORKERS,
-    DEFAULT_SIDECAR_EXTENSIONS,
     DEFAULT_WEBHOOK_HOST,
     DEFAULT_WEBHOOK_PORT,
     ENV_PREFIX_GENERAL,
     ENV_PREFIX_LOG_ROTATION,
     ENV_PREFIX_LOGGING,
+    ENV_WEBHOOK_API_KEY,
+    AudioLanguageMatchMode,
     DatabaseType,
     LogLevel,
     PostProbeFilterType,
@@ -79,7 +81,6 @@ from boomarr.const import (
     ProberType,
     TriggerType,
 )
-from boomarr.const import AudioLanguageMatchMode
 
 __all__ = [
     "AnyDatabaseConfig",
@@ -89,8 +90,8 @@ __all__ = [
     "PostProbeFilterType",
     "PreProbeFilterType",
     "ProberType",
-    "ScheduleTriggerConfig",
     "SQLiteDatabaseConfig",
+    "ScheduleTriggerConfig",
     "TriggerType",
     "WatchConfig",
     "WebhookTriggerConfig",
@@ -163,7 +164,7 @@ class GeneralConfig(_ConfigModel):
         try:
             zoneinfo.ZoneInfo(v)
         except KeyError:
-            raise ValueError(f"Invalid timezone: '{v}'")
+            raise ValueError(f"Invalid timezone: '{v}'") from None
         return v
 
     @field_validator(CONF_GENERAL_UMASK, mode="before")
@@ -183,7 +184,7 @@ class GeneralConfig(_ConfigModel):
         except ValueError:
             raise ValueError(
                 f"Invalid umask '{v}': must be a valid octal string (e.g. '022')"
-            )
+            ) from None
         if val < 0 or val > 0o777:
             raise ValueError(f"Umask value '{v}' out of range (000-777)")
         return v
@@ -410,11 +411,14 @@ class WebhookTriggerConfig(TriggerConfig):
     type: Literal[TriggerType.WEBHOOK] = TriggerType.WEBHOOK
     host: str = DEFAULT_WEBHOOK_HOST
     port: int = Field(default=DEFAULT_WEBHOOK_PORT, ge=1, le=65535)
-    api_key: SecretStr | None = None
+    api_key: SecretStr | None = Field(default=None, validate_default=True)
 
     @field_validator("api_key", mode="before")
     @classmethod
     def _coerce_empty_api_key(cls, v: object) -> object:
+        """Fall back to ``WEBHOOK_API_KEY`` so secrets can stay out of the file."""
+        if v is None:
+            v = os.environ.get(ENV_WEBHOOK_API_KEY)
         if isinstance(v, str) and not v.strip():
             return None
         return v
@@ -709,7 +713,7 @@ class Config(_ConfigModel):
         return v
 
     @model_validator(mode="after")
-    def _validate_output_paths(self) -> "Config":
+    def _validate_output_paths(self) -> Config:
         """Ensure every library can resolve an output path.
 
         Either the global ``output_path`` is set, or each library provides
@@ -731,7 +735,7 @@ class Config(_ConfigModel):
         return self
 
     @model_validator(mode="after")
-    def _validate_no_path_overlap(self) -> "Config":
+    def _validate_no_path_overlap(self) -> Config:
         """Reject dangerous or conflicting input/output path layouts.
 
         * No output directory may equal, contain, or live inside *any*

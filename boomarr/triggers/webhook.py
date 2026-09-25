@@ -17,6 +17,7 @@ settings).
 import asyncio
 import base64
 import binascii
+import contextlib
 import hmac
 import json
 import logging
@@ -41,6 +42,7 @@ _REASONS = {
     405: "Method Not Allowed",
     408: "Request Timeout",
     413: "Content Too Large",
+    503: "Service Unavailable",
 }
 
 
@@ -121,10 +123,8 @@ class WebhookTrigger(TriggerSource):
             _LOGGER.debug("Webhook connection from %s failed: %s", peer, exc)
         finally:
             writer.close()
-            try:
+            with contextlib.suppress(ConnectionError, OSError):
                 await writer.wait_closed()
-            except ConnectionError, OSError:
-                pass
 
     async def _process(
         self, reader: asyncio.StreamReader, peer: object
@@ -176,7 +176,8 @@ class WebhookTrigger(TriggerSource):
             _LOGGER.warning("Rejected unauthenticated webhook request from %s", peer)
             raise _HttpError(401, "Invalid or missing API key")
 
-        assert self._queue is not None
+        if self._queue is None:  # pragma: no cover - start() sets it
+            raise _HttpError(503, "Not ready")
         await self._queue.put(
             ScanEvent(source=f"webhook:{source}", timestamp=time.monotonic())
         )

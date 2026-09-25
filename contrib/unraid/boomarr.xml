@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>boomarr</Name>
+  <Repository>ghcr.io/eulemitkeule/boomarr:latest</Repository>
+  <Registry>https://github.com/EuleMitKeule/boomarr/pkgs/container/boomarr</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/EuleMitKeule/boomarr/issues</Support>
+  <Project>https://github.com/EuleMitKeule/boomarr</Project>
+  <Overview>Symlink-based audio language filter for Plex, Jellyfin and Emby. Boomarr mirrors your media library into separate folders that only contain files with the audio languages you want (e.g. a German-only library for family members). No files are copied or modified.[br][br]IMPORTANT: Map your media share to the SAME container path that Plex/Jellyfin uses (e.g. /data), map it READ-ONLY, and edit /config/boomarr.yml after the first start.</Overview>
+  <Category>MediaApp:Video Tools:</Category>
+  <WebUI/>
+  <TemplateURL>https://raw.githubusercontent.com/EuleMitKeule/boomarr/master/contrib/unraid/boomarr.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/EuleMitKeule/boomarr/master/docs/assets/icon.png</Icon>
+  <PostArgs/>
+  <Requires>The media share must be mapped read-only and at the same container path your media server uses, otherwise the symlinks will not resolve inside Plex/Jellyfin.</Requires>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/boomarr" Mode="rw" Description="Config file (boomarr.yml), probe cache and logs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/boomarr</Config>
+  <Config Name="Media (read-only)" Target="/data/media" Default="/mnt/user/data/media" Mode="ro" Description="Your media library. MUST be read-only and use the same container path as in Plex/Jellyfin." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data/media</Config>
+  <Config Name="Filtered output" Target="/data/filtered" Default="/mnt/user/data/filtered" Mode="rw" Description="Where the filtered symlink libraries are created. Map it into Plex/Jellyfin at the same container path." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data/filtered</Config>
+  <Config Name="Webhook port" Target="9797" Default="9797" Mode="tcp" Description="Only needed when the webhook trigger is enabled in boomarr.yml (Sonarr/Radarr instant rescans)." Type="Port" Display="advanced" Required="false" Mask="false">9797</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID Boomarr runs as." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID Boomarr runs as." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
+  <Config Name="UMASK" Target="UMASK" Default="022" Mode="" Description="File creation mask." Type="Variable" Display="advanced" Required="false" Mask="false">022</Config>
+  <Config Name="TZ" Target="TZ" Default="Europe/Berlin" Mode="" Description="Timezone used for log timestamps." Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Berlin</Config>
+  <Config Name="Log level" Target="LOG_LEVEL" Default="info" Mode="" Description="debug, info, warning, error or critical." Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
+  <Config Name="Webhook API key" Target="WEBHOOK_API_KEY" Default="" Mode="" Description="Shared secret for the webhook trigger (used when api_key is not set in boomarr.yml)." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+</Container>

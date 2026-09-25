@@ -268,7 +268,7 @@ class TestWatcher:
                 await asyncio.sleep(0.3)
                 watcher._request_shutdown()
 
-            asyncio.create_task(_shutdown_soon())
+            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
             await watcher._run()
 
         asyncio.run(_run())
@@ -299,7 +299,7 @@ class TestWatcher:
                 await asyncio.sleep(0.5)
                 watcher._request_shutdown()
 
-            asyncio.create_task(_shutdown_soon())
+            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
             await watcher._run()
 
         asyncio.run(_run())
@@ -331,7 +331,7 @@ class TestWatcher:
                 await asyncio.sleep(0.1)
                 watcher._request_shutdown()
 
-            asyncio.create_task(_shutdown_soon())
+            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
             await watcher._run()
 
         asyncio.run(_run())
