@@ -174,7 +174,8 @@ jobs:
           helm lint charts/boomarr
           helm template boomarr charts/boomarr > /dev/null
           helm template boomarr charts/boomarr \
-            --set webhook.enabled=true \
+            --set server.enabled=true --set serviceMonitor.enabled=true \
+            --set notifyUrls[0]=json://x --set server.apiKey=k \
             --set persistence.config.existingClaim=cfg > /dev/null
 
   sonar:

@@ -5,12 +5,13 @@ Boomarr is running in watch mode.
 
 Remember: source media must be mounted read-only, and your media server
 must see the source files under the same paths as Boomarr.
-{{- if .Values.webhook.enabled }}
+{{- if .Values.server.enabled }}
 
 Webhook URL for Sonarr/Radarr (Settings → Connect → Webhook):
   http://{{ include "boomarr.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/api/v1/webhook/sonarr
-{{- if not (or .Values.webhook.apiKey .Values.webhook.existingSecret) }}
+Prometheus metrics: http://{{ include "boomarr.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/metrics
+{{- if not (or .Values.server.apiKey .Values.server.existingSecret) }}
 
-WARNING: webhook.apiKey is empty, anyone in the cluster can trigger scans.
+WARNING: server.apiKey is empty, anyone in the cluster can trigger scans.
 {{- end }}
 {{- end }}

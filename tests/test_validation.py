@@ -21,7 +21,6 @@ from boomarr.config import (
 )
 from boomarr.pipeline import PipelineFactory
 from boomarr.triggers.schedule import ScheduleTrigger
-from boomarr.triggers.webhook import WebhookTrigger
 
 
 def _lib(lib_name: str, input_path: str, **sym: Any) -> dict[str, Any]:
@@ -221,23 +220,31 @@ class TestLibraryOverrides:
 
 
 class TestTriggers:
-    def test_webhook_trigger_config(self) -> None:
+    def test_legacy_webhook_trigger_becomes_server(self) -> None:
         cfg = _config(
             triggers=[
                 {"type": "webhook", "port": 1234, "api_key": "secret"},
                 "schedule",
             ]
         )
-        webhook, schedule = cfg.triggers
-        assert isinstance(webhook, WebhookTriggerConfig)
-        assert isinstance(schedule, ScheduleTriggerConfig)
-        assert webhook.api_key is not None
-        assert webhook.api_key.get_secret_value() == "secret"
+        assert len(cfg.triggers) == 1
+        assert isinstance(cfg.triggers[0], ScheduleTriggerConfig)
+        assert cfg.server.enabled is True
+        assert cfg.server.port == 1234
+        assert cfg.server.api_key is not None
+        assert cfg.server.api_key.get_secret_value() == "secret"
         assert "secret" not in cfg.model_dump_json()
-
+        assert any("deprecated" in w for w in cfg.warnings)
         built = PipelineFactory.build_triggers(cfg.triggers)
-        assert isinstance(built[0], WebhookTrigger)
-        assert isinstance(built[1], ScheduleTrigger)
+        assert len(built) == 1
+        assert isinstance(built[0], ScheduleTrigger)
+
+    def test_server_section(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BOOMARR_API_KEY", "env-key")
+        cfg = _config(server={"enabled": True, "port": 8080})
+        assert cfg.server.api_key is not None
+        assert cfg.server.api_key.get_secret_value() == "env-key"
+        assert cfg.warnings == []
 
     def test_empty_api_key_means_none(self) -> None:
         assert WebhookTriggerConfig.model_validate({"api_key": "  "}).api_key is None

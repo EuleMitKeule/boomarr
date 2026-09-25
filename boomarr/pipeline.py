@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from boomarr.config import (
+    AudioChannelsFilterConfig,
+    AudioCodecFilterConfig,
     Config,
     FFProbeProberConfig,
     LibraryConfig,
@@ -26,9 +28,13 @@ from boomarr.config import (
     PreProbeFilterType,
     ProberConfig,
     ProberType,
+    RadarrProberConfig,
+    ResolutionFilterConfig,
     ScheduleTriggerConfig,
+    SonarrProberConfig,
     SQLiteDatabaseConfig,
     TriggerConfig,
+    VideoCodecFilterConfig,
     WebhookTriggerConfig,
 )
 from boomarr.const import (
@@ -40,13 +46,20 @@ from boomarr.const import (
 from boomarr.filters.audio_language import AudioLanguageFilter
 from boomarr.filters.base import PostProbeFilter, PreProbeFilter
 from boomarr.filters.file_extension import FileExtensionFilter
+from boomarr.filters.media import (
+    AudioChannelsFilter,
+    AudioCodecFilter,
+    ResolutionFilter,
+    VideoCodecFilter,
+)
+from boomarr.models import RemovalGuard
+from boomarr.probers.arr import ArrProber
 from boomarr.probers.base import MediaProber
 from boomarr.probers.ffprobe import FFProbeProber
 from boomarr.state import InMemoryStateStore, SQLiteStateStore, StateStore
 from boomarr.symlinks import SymlinkManager
 from boomarr.triggers.base import TriggerSource
 from boomarr.triggers.schedule import ScheduleTrigger
-from boomarr.triggers.webhook import WebhookTrigger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,6 +97,8 @@ class Pipeline:
     ignore_patterns: tuple[str, ...] = DEFAULT_IGNORE_PATTERNS
     relative_symlinks: bool = False
     probe_workers: int = DEFAULT_PROBE_WORKERS
+    removal_guard: RemovalGuard | None = None
+    force: bool = False
 
 
 class PipelineFactory:
@@ -96,10 +111,28 @@ class PipelineFactory:
     """
 
     def __init__(
-        self, *, state: StateStore | None = None, dry_run: bool = False
+        self,
+        *,
+        state: StateStore | None = None,
+        dry_run: bool = False,
+        force: bool = False,
     ) -> None:
         self._state = state or InMemoryStateStore()
         self._dry_run = dry_run
+        self._force = force
+        self._probers: dict[str, list[MediaProber]] = {}
+
+    def _cached_probers(self, configs: Sequence[ProberConfig]) -> list[MediaProber]:
+        """Reuse prober instances across scans (keeps e.g. Sonarr indexes warm)."""
+        key = "|".join(c.model_dump_json() for c in configs)
+        if key not in self._probers:
+            self._probers[key] = self._build_probers(configs)
+        return self._probers[key]
+
+    @property
+    def state(self) -> StateStore:
+        """The state store shared by all pipelines of this factory."""
+        return self._state
 
     @staticmethod
     def build_state_store(config: Config) -> StateStore:
@@ -123,17 +156,8 @@ class PipelineFactory:
                         )
                     )
                 case WebhookTriggerConfig():
-                    triggers.append(
-                        WebhookTrigger(
-                            host=config.host,
-                            port=config.port,
-                            api_key=(
-                                config.api_key.get_secret_value()
-                                if config.api_key is not None
-                                else None
-                            ),
-                        )
-                    )
+                    # Migrated into Config.server by validation.
+                    continue
                 case _:
                     raise ValueError(f"Unknown trigger: {config.type!r}")
         return triggers
@@ -151,6 +175,20 @@ class PipelineFactory:
                         )
                     else:
                         probers.append(FFProbeProber())
+                case ProberType.SONARR | ProberType.RADARR:
+                    assert isinstance(  # noqa: S101
+                        config, SonarrProberConfig | RadarrProberConfig
+                    )
+                    probers.append(
+                        ArrProber(
+                            kind=config.type.value,
+                            url=config.url,
+                            api_key=config.api_key.get_secret_value(),
+                            path_mappings=config.path_mappings,
+                            cache_ttl=config.cache_ttl,
+                            timeout=config.timeout,
+                        )
+                    )
                 case _:
                     raise ValueError(f"Unknown prober: {config.type!r}")
         return probers
@@ -194,6 +232,32 @@ class PipelineFactory:
                     aliases=aliases,
                     suffix=config.suffix,
                     mode=getattr(config, "mode", AudioLanguageMatchMode.ANY),
+                    invert=getattr(config, "invert", False),
+                )
+            case PostProbeFilterType.RESOLUTION:
+                assert isinstance(config, ResolutionFilterConfig)  # noqa: S101
+                return ResolutionFilter(
+                    min_height=config.min_height,
+                    max_height=config.max_height,
+                    suffix=config.suffix,
+                    invert=config.invert,
+                )
+            case PostProbeFilterType.VIDEO_CODEC:
+                assert isinstance(config, VideoCodecFilterConfig)  # noqa: S101
+                return VideoCodecFilter(
+                    config.codecs, suffix=config.suffix, invert=config.invert
+                )
+            case PostProbeFilterType.AUDIO_CODEC:
+                assert isinstance(config, AudioCodecFilterConfig)  # noqa: S101
+                return AudioCodecFilter(
+                    config.codecs, suffix=config.suffix, invert=config.invert
+                )
+            case PostProbeFilterType.AUDIO_CHANNELS:
+                assert isinstance(config, AudioChannelsFilterConfig)  # noqa: S101
+                return AudioChannelsFilter(
+                    min_channels=config.min_channels,
+                    suffix=config.suffix,
+                    invert=config.invert,
                 )
             case _:
                 raise ValueError(f"Unknown post-probe filter type: {config.type!r}")
@@ -231,7 +295,7 @@ class PipelineFactory:
             else config.pre_probe_filters
         )
         return Pipeline(
-            probers=self._build_probers(prober_configs),
+            probers=self._cached_probers(prober_configs),
             pre_probe_filters=self._build_pre_probe_filters(pre_filter_configs),
             symlink_libraries=self._resolve_symlink_libraries(config, library),
             symlinks=SymlinkManager(dry_run=self._dry_run),
@@ -240,6 +304,8 @@ class PipelineFactory:
             ignore_patterns=tuple(config.ignore_patterns_for(library)),
             relative_symlinks=config.relative_symlinks_for(library),
             probe_workers=config.probe_workers,
+            removal_guard=config.removal_guard.to_model(),
+            force=self._force,
         )
 
     def for_watch(self, config: Config, library: LibraryConfig) -> Pipeline:
@@ -260,7 +326,7 @@ class PipelineFactory:
             library.probers if library.probers is not None else config.probers
         )
         return Pipeline(
-            probers=self._build_probers(prober_configs),
+            probers=self._cached_probers(prober_configs),
             pre_probe_filters=[],
             symlink_libraries=self._resolve_symlink_libraries(config, library),
             symlinks=SymlinkManager(dry_run=self._dry_run),

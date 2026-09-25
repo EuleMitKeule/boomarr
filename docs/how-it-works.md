@@ -64,6 +64,8 @@ Boomarr is designed so that it cannot damage your media or your libraries:
   rebuilt automatically without touching any links.
 - **Conflicting configs are rejected** (overlapping inputs/outputs,
   duplicate or nested outputs, path traversal in names).
+- **Removal guard.** Removing more than half of a folder's links at once is
+  refused until confirmed with `boomarr scan --force`.
 - **Dry run.** `boomarr scan --dry-run` shows what would change.
 
 ## Commands
@@ -71,7 +73,7 @@ Boomarr is designed so that it cannot damage your media or your libraries:
 | Command | Description |
 | --- | --- |
 | `boomarr watch` | Run continuously, scanning on every trigger (Docker default). |
-| `boomarr scan [--dry-run]` | One full scan, then exit. |
+| `boomarr scan [--dry-run] [--force]` | One full scan, then exit. `--force` bypasses the removal guard once. |
 | `boomarr clean` | Only remove broken symlinks. |
 | `boomarr status [--json]` | Probe cache statistics, languages found, output folders. |
 | `boomarr paths` | Print writable directories (used by the Docker entrypoint). |

@@ -70,4 +70,11 @@ supported by Plex, Jellyfin and Emby.
 
 ### How do I trigger a scan right after Sonarr/Radarr imported something?
 
-Add a [webhook trigger](configuration.md#webhook).
+Enable the [HTTP server](configuration.md#http-server-webhooks-metrics-status)
+and add a webhook in Sonarr/Radarr.
+
+### "Removal guard: refusing to remove …"
+
+A scan wanted to remove more than half of the links of a folder. If that is
+intended (you changed filters or removed media on purpose), run
+`boomarr scan --force` once. Otherwise check your mounts and paths.

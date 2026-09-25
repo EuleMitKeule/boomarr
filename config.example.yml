@@ -21,12 +21,36 @@ output_path: /media/filtered
 #   - type: schedule
 #     interval: 600          # seconds between rescans (default: 600)
 #     run_on_start: true     # scan immediately on startup (default: true)
-#
-#   # Rescan as soon as Sonarr/Radarr imported something:
-#   # Settings -> Connect -> Webhook -> URL http://boomarr:9797/api/v1/webhook/sonarr
-#   - type: webhook
-#     port: 9797
-#     api_key: change-me     # sent as X-Api-Key header, ?apikey= or basic-auth password
+
+# Built-in HTTP server (watch mode): Sonarr/Radarr webhooks, Prometheus
+# /metrics and /api/v1/status. Webhook URL for Sonarr/Radarr
+# (Settings -> Connect -> Webhook): http://boomarr:9797/api/v1/webhook/sonarr
+# server:
+#   enabled: true
+#   port: 9797
+#   api_key: change-me       # or BOOMARR_API_KEY; X-Api-Key header, ?apikey= or basic-auth password
+
+# Refuse to remove more than 50 % of an output folder's links at once (when
+# more than 20 would go). Run `boomarr scan --force` for intended removals.
+# removal_guard:
+#   max_percent: 50
+#   min_count: 20
+
+# Notifications via Apprise (Telegram, Discord, ntfy, e-mail, ...).
+# notifications:
+#   urls: ["tgram://bottoken/ChatID"]   # or BOOMARR_NOTIFY_URLS
+#   on_errors: true
+#   on_blocked: true
+#   on_changes: false
+
+# Ask your media server to rescan changed folders right away.
+# media_servers:
+#   - type: plex
+#     url: http://plex:32400
+#     token: your-plex-token
+#   - type: jellyfin           # or emby
+#     url: http://jellyfin:8096
+#     api_key: your-api-key
 
 # External subtitles next to a matching media file (e.g. `Movie.de.srt` next
 # to `Movie.mkv`) are linked too. Set to [] to disable.
@@ -59,6 +83,8 @@ output_path: /media/filtered
 #             languages:
 #               - deu                 # ISO 639 code; ger / de / de-DE match too
 #             # mode: any             # any (default) or all configured languages
+#       # More filters: resolution, video_codec, audio_codec, audio_channels;
+#       # every filter supports `invert: true`.
 #
 #   - name: Shows
 #     input_path: /media/shows

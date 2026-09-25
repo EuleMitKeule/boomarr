@@ -32,20 +32,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "boomarr.secretName" -}}
-{{- default (include "boomarr.fullname" .) .Values.webhook.existingSecret }}
+{{- default (include "boomarr.fullname" .) .Values.server.existingSecret }}
 {{- end }}
 
-{{/* Render the Boomarr config, injecting the webhook trigger when enabled. */}}
+{{/* Render the Boomarr config, enabling the HTTP server when requested. */}}
 {{- define "boomarr.config" -}}
 {{- $cfg := deepCopy .Values.config }}
-{{- if .Values.webhook.enabled }}
-{{- $triggers := list }}
-{{- if hasKey $cfg "triggers" }}
-{{- $triggers = $cfg.triggers }}
-{{- else }}
-{{- $triggers = list (dict "type" "schedule") }}
-{{- end }}
-{{- $_ := set $cfg "triggers" (append $triggers (dict "type" "webhook" "port" .Values.webhook.port)) }}
+{{- if .Values.server.enabled }}
+{{- $server := dict "enabled" true "port" .Values.server.port "metrics_auth" .Values.server.metricsAuth }}
+{{- $_ := set $cfg "server" (merge $server (default (dict) $cfg.server)) }}
 {{- end }}
 {{- toYaml $cfg }}
 {{- end }}

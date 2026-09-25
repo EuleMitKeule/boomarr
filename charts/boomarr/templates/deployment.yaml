@@ -48,17 +48,24 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            {{- if and .Values.webhook.enabled (or .Values.webhook.apiKey .Values.webhook.existingSecret) }}
-            - name: WEBHOOK_API_KEY
+            {{- if and .Values.server.enabled (or .Values.server.apiKey .Values.server.existingSecret) }}
+            - name: BOOMARR_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "boomarr.secretName" . }}
-                  key: {{ .Values.webhook.existingSecretKey }}
+                  key: {{ .Values.server.existingSecretKey }}
             {{- end }}
-          {{- if .Values.webhook.enabled }}
+            {{- if .Values.notifyUrls }}
+            - name: BOOMARR_NOTIFY_URLS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "boomarr.fullname" . }}
+                  key: notify-urls
+            {{- end }}
+          {{- if .Values.server.enabled }}
           ports:
             - name: http
-              containerPort: {{ .Values.webhook.port }}
+              containerPort: {{ .Values.server.port }}
               protocol: TCP
           readinessProbe:
             httpGet:

@@ -29,16 +29,27 @@ env:
   TZ: UTC
   LOG_LEVEL: info
 
-# -- Webhook trigger (e.g. for Sonarr/Radarr "Connect → Webhook").
-# Adds a `webhook` trigger to the config and exposes a Service.
-webhook:
+# -- Built-in HTTP server: Sonarr/Radarr webhooks, Prometheus /metrics and
+# /api/v1/status. Enables `server` in the config and exposes a Service.
+server:
   enabled: false
   port: 9797
+  # -- Require the API key for /metrics as well
+  metricsAuth: false
   # -- API key (stored in a Secret). Prefer `existingSecret` in production.
   apiKey: ""
   # -- Existing Secret containing the API key
   existingSecret: ""
   existingSecretKey: api-key
+
+# -- Prometheus Operator ServiceMonitor (requires server.enabled)
+serviceMonitor:
+  enabled: false
+  interval: 60s
+  labels: {}
+
+# -- Apprise notification URLs, stored in a Secret (BOOMARR_NOTIFY_URLS)
+notifyUrls: []
 
 service:
   type: ClusterIP

@@ -16,6 +16,17 @@ class AudioTrack:
     language: str
     codec: str
     title: str | None = None
+    channels: int | None = None
+
+
+@dataclass(frozen=True)
+class VideoTrack:
+    """A single video track extracted from a media file (cover art excluded)."""
+
+    index: int
+    codec: str
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass(frozen=True)
@@ -26,6 +37,13 @@ class MediaInfo:
     audio_tracks: list[AudioTrack] = field(default_factory=list)
     size: int = 0
     mtime: float = 0.0
+    video_tracks: list[VideoTrack] = field(default_factory=list)
+
+    @property
+    def height(self) -> int | None:
+        """Return the height of the largest video track, if any."""
+        heights = [v.height for v in self.video_tracks if v.height]
+        return max(heights) if heights else None
 
 
 @dataclass(frozen=True)
@@ -51,6 +69,9 @@ class ScanResult:
     skipped: int = 0
     filtered: int = 0
     errors: int = 0
+    blocked: int = 0
+    links: dict[str, int] = field(default_factory=dict)
+    changed_outputs: set[str] = field(default_factory=set)
 
     @property
     def total(self) -> int:
@@ -73,4 +94,25 @@ class ScanResult:
         self.skipped += other.skipped
         self.filtered += other.filtered
         self.errors += other.errors
+        self.blocked += other.blocked
+        self.links.update(other.links)
+        self.changed_outputs |= other.changed_outputs
         return self
+
+
+@dataclass(frozen=True)
+class RemovalGuard:
+    """Refuses mass deletions that are more likely an accident than intended.
+
+    A reconciliation is blocked when it would remove more than
+    ``min_count`` symlinks *and* more than ``max_percent`` of the existing
+    symlinks of an output directory.
+    """
+
+    max_percent: float
+    min_count: int
+
+    def blocks(self, removals: int, existing: int) -> bool:
+        if removals <= self.min_count or existing <= 0:
+            return False
+        return removals * 100 / existing > self.max_percent

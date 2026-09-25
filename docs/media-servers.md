@@ -68,4 +68,12 @@ linked automatically, see `sidecar_extensions`.
 ## Sonarr / Radarr
 
 Boomarr only reads your media, so no changes are required. For instant
-updates after an import, add a [webhook trigger](configuration.md#webhook).
+updates after an import, enable the [HTTP server](configuration.md#http-server-webhooks-metrics-status)
+and add a webhook. To skip ffprobe entirely for files Sonarr/Radarr already
+analysed, use the [`sonarr`/`radarr` probers](configuration.md#sonarr-and-radarr-probers).
+
+## Automatic media server refresh
+
+Instead of waiting for the media server's own schedule or real-time
+monitoring, Boomarr can ask Plex/Jellyfin/Emby to rescan exactly the folders
+that changed. See [media server refresh](configuration.md#media-server-refresh).

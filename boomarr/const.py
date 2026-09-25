@@ -27,12 +27,18 @@ class ProberType(StrEnum):
     """Discriminator values for prober config types."""
 
     FFPROBE = "ffprobe"
+    SONARR = "sonarr"
+    RADARR = "radarr"
 
 
 class PostProbeFilterType(StrEnum):
     """Discriminator values for post-probe filter config types."""
 
     AUDIO_LANGUAGE = "audio_language"
+    RESOLUTION = "resolution"
+    VIDEO_CODEC = "video_codec"
+    AUDIO_CODEC = "audio_codec"
+    AUDIO_CHANNELS = "audio_channels"
 
 
 class DatabaseType(StrEnum):
@@ -49,6 +55,14 @@ class TriggerType(StrEnum):
     WEBHOOK = "webhook"
 
 
+class MediaServerType(StrEnum):
+    """Discriminator values for media server integrations."""
+
+    PLEX = "plex"
+    JELLYFIN = "jellyfin"
+    EMBY = "emby"
+
+
 class AudioLanguageMatchMode(StrEnum):
     """How the configured languages of an audio_language filter are combined."""
 
@@ -63,6 +77,8 @@ ENV_LOG_DIR = "LOG_DIR"
 ENV_LOG_FILE_NAME = "LOG_FILE_NAME"
 ENV_SKIP_READONLY_CHECK = "DANGEROUS_SKIP_READONLY_CHECK"
 ENV_WEBHOOK_API_KEY = "WEBHOOK_API_KEY"
+ENV_API_KEY = "BOOMARR_API_KEY"
+ENV_NOTIFY_URLS = "BOOMARR_NOTIFY_URLS"
 
 ENV_PREFIX_GENERAL = ""
 ENV_PREFIX_LOGGING = "LOG"
@@ -143,6 +159,9 @@ DEFAULT_FFPROBE_PATH: str = "ffprobe"
 DEFAULT_FFPROBE_TIMEOUT: float = 60.0
 
 DEFAULT_PROBE_WORKERS: int = 4
+
+DEFAULT_REMOVAL_GUARD_MAX_PERCENT: float = 50.0
+DEFAULT_REMOVAL_GUARD_MIN_COUNT: int = 20
 
 HEARTBEAT_INTERVAL: float = 30.0
 HEARTBEAT_MAX_AGE: float = 120.0
