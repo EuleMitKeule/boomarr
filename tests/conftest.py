@@ -4,6 +4,7 @@ Provides common test fixtures, configuration, and utilities for the test suite.
 Includes setup/teardown logic and mock objects used across multiple test modules.
 """
 
+import logging
 from pathlib import Path
 from typing import Iterator
 
@@ -19,6 +20,18 @@ def reset_config() -> Iterator[None]:
     config_module._config = None
     yield
     config_module._config = None
+
+
+@pytest.fixture(autouse=True)
+def reset_logging() -> Iterator[None]:
+    """Undo ``setup_logging`` side effects (handlers, propagate) after a test."""
+    logger = logging.getLogger("boomarr")
+    yield
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+    logger.propagate = True
+    logger.setLevel(logging.NOTSET)
 
 
 @pytest.fixture

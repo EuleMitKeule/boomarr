@@ -1,6 +1,7 @@
 """Tests for the trigger config, pipeline trigger building, and watcher."""
 
 import asyncio
+import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -250,7 +251,7 @@ class TestWatcher:
     def test_single_event_triggers_scan(self) -> None:
         results: list[ScanResult] = []
 
-        def scan_all() -> ScanResult:
+        def scan_all(cancel: threading.Event) -> ScanResult:
             r = ScanResult(created=1)
             results.append(r)
             return r
@@ -276,7 +277,7 @@ class TestWatcher:
     def test_debounce_collapses_events(self) -> None:
         call_count = 0
 
-        def scan_all() -> ScanResult:
+        def scan_all(cancel: threading.Event) -> ScanResult:
             nonlocal call_count
             call_count += 1
             return ScanResult()
@@ -308,7 +309,7 @@ class TestWatcher:
     def test_shutdown_event_stops_worker(self) -> None:
         watcher = Watcher(
             triggers=[],
-            scan_callback=lambda: ScanResult(),
+            scan_callback=lambda cancel: ScanResult(),
             debounce_seconds=0.05,
         )
 
@@ -322,7 +323,7 @@ class TestWatcher:
         """Empty trigger list should exit without blocking."""
         watcher = Watcher(
             triggers=[],
-            scan_callback=lambda: ScanResult(),
+            scan_callback=lambda cancel: ScanResult(),
         )
 
         async def _run() -> None:

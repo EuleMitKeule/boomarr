@@ -2,19 +2,21 @@
 
 import json
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
+from boomarr.const import DEFAULT_FFPROBE_PATH, DEFAULT_FFPROBE_TIMEOUT
 from boomarr.models import AudioTrack, MediaInfo
 from boomarr.probers.base import MediaProber
 
 _LOGGER = logging.getLogger(__name__)
 
-_FFPROBE_CMD = [
-    "ffprobe",
+
+_FFPROBE_ARGS = [
     "-v",
-    "quiet",
+    "error",
     "-print_format",
     "json",
     "-show_entries",
@@ -29,8 +31,30 @@ _FFPROBE_CMD = [
 class FFProbeProber(MediaProber):
     """Probes media files using the FFprobe CLI tool.
 
-    Requires FFprobe (part of FFmpeg) to be installed and available on PATH.
+    Requires FFprobe (part of FFmpeg) to be installed.
+
+    Args:
+        path: FFprobe executable name (looked up on ``PATH``) or path.
+        timeout: Seconds before a single probe is aborted.
     """
+
+    def __init__(
+        self,
+        *,
+        path: str = DEFAULT_FFPROBE_PATH,
+        timeout: float = DEFAULT_FFPROBE_TIMEOUT,
+    ) -> None:
+        self._path = path
+        self._timeout = timeout
+
+    def check_available(self) -> str | None:
+        """Return an error message if the FFprobe binary cannot be found."""
+        if shutil.which(self._path) is None:
+            return (
+                f"FFprobe executable '{self._path}' not found. Install FFmpeg "
+                f"or set the prober 'path' option."
+            )
+        return None
 
     def probe(self, file: Path) -> MediaInfo | None:
         """Probe a media file using FFprobe and extract audio track metadata."""
@@ -42,10 +66,13 @@ class FFProbeProber(MediaProber):
 
         try:
             result = subprocess.run(
-                [*_FFPROBE_CMD, str(file)],
+                [self._path, *_FFPROBE_ARGS, str(file)],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self._timeout,
+                check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             _LOGGER.error("FFprobe failed for '%s': %s", file, exc)

@@ -4,9 +4,14 @@ Defines the Typer CLI application and top-level commands. Serves as the
 main execution point when Boomarr is invoked from the command line.
 """
 
+import json
 import logging
 import os
 import sys
+import tempfile
+import threading
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -22,6 +27,9 @@ from boomarr.const import (
     DEFAULT_LOG_FILE_NAME,
     ENV_CONFIG_DIR,
     ENV_CONFIG_FILE_NAME,
+    ENV_HEARTBEAT_FILE,
+    HEARTBEAT_MAX_AGE,
+    DEFAULT_HEARTBEAT_FILE_NAME,
     ENV_LOG_DIR,
     ENV_LOG_FILE_NAME,
     ENV_LOG_LEVEL,
@@ -33,7 +41,6 @@ from boomarr.log import setup_logging
 from boomarr.models import ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
-from boomarr.state import SQLiteStateStore, StateStore
 from boomarr.watcher import Watcher
 
 _LOGGER = logging.getLogger(APP_NAME)
@@ -69,8 +76,10 @@ LogLevelOpt = Annotated[
         case_sensitive=False,
     ),
 ]
+# Deliberately ``str``: typer would turn an empty string into Path("."),
+# but an empty value must disable file logging.
 LogDirOpt = Annotated[
-    Path | None,
+    str | None,
     typer.Option(
         "--log-dir",
         envvar=ENV_LOG_DIR,
@@ -99,7 +108,7 @@ def _init_config(
     config_dir: Path,
     config_file_name: str,
     log_level: LogLevel | None,
-    log_dir: Path | None,
+    log_dir: str | None,
     log_file_name: str | None,
 ) -> Config:
     """Initialize a new config file with default values."""
@@ -108,57 +117,48 @@ def _init_config(
     )
     setup_logging(config.logging, tz=config.general.tz)
     _LOGGER.info("boomarr version %s startup complete", VERSION)
+    for warning in config.warnings:
+        _LOGGER.warning(warning)
     _LOGGER.debug("Loaded config: %s", config.model_dump_json(indent=2))
     return config
 
 
-def _clean_symlinks_on_reset(state: StateStore, config: Config) -> None:
-    """Remove all symlinks in output paths when the state store was reset.
-
-    Called after building the state store.  If the store was freshly reset
-    (schema migration or corruption), every configured symlink output
-    directory is walked and all symlinks are deleted so that the next scan
-    rebuilds them from scratch.
-    """
-    if not isinstance(state, SQLiteStateStore) or not state.was_reset:
-        return
-
-    total_removed = 0
-
+def _check_probers(config: Config) -> None:
+    """Exit early if a configured prober (e.g. ffprobe) is not usable."""
+    factory = PipelineFactory()
     for library in config.libraries:
-        base_output = (
-            library.output_path
-            if library.output_path is not None
-            else config.output_path
-        )
-        for sym_lib in library.symlink_libraries:
-            if sym_lib.output_path is not None:
-                output_path = sym_lib.output_path
-            elif sym_lib.name is not None and base_output is not None:
-                output_path = base_output / sym_lib.name
-            elif base_output is not None:
-                lib_slug = library.name.lower().replace(" ", "-")
-                combined_suffix = "-".join(
-                    f.suffix for f in sym_lib.filters if f.suffix is not None
-                )
-                output_path = base_output / f"{lib_slug}-{combined_suffix}"
-            else:
-                continue
+        for prober in factory.for_scan(config, library).probers:
+            error = prober.check_available()
+            if error is not None:
+                _LOGGER.critical(error)
+                sys.exit(1)
 
-            if not output_path.is_dir():
-                continue
 
-            for path in list(output_path.rglob("*")):
-                if path.is_symlink():
-                    _LOGGER.warning("Removing symlink after state reset: %s", path)
-                    path.unlink()
-                    total_removed += 1
+def _heartbeat_file() -> Path:
+    """Return the heartbeat file used by ``watch`` and ``healthcheck``."""
+    env = os.environ.get(ENV_HEARTBEAT_FILE)
+    if env:
+        return Path(env)
+    return Path(tempfile.gettempdir()) / DEFAULT_HEARTBEAT_FILE_NAME
 
-    if total_removed:
-        _LOGGER.warning(
-            "State reset: removed %d symlinks from output directories",
-            total_removed,
-        )
+
+def _scan_all(
+    config: Config, factory: PipelineFactory, cancel: threading.Event
+) -> ScanResult:
+    """Process every configured library, isolating per-library failures."""
+    total = ScanResult()
+    for library in config.libraries:
+        if cancel.is_set():
+            break
+        try:
+            pipeline = factory.for_scan(config, library)
+            result = LibraryProcessor(pipeline, cancel=cancel).process_library(library)
+        except Exception:
+            _LOGGER.exception("Processing library '%s' failed", library.name)
+            total.errors += 1
+            continue
+        total.merge(result)
+    return total
 
 
 def verify_source_dirs_readonly(
@@ -214,6 +214,13 @@ def scan(
     log_dir: LogDirOpt = None,
     log_file_name: LogFileNameOpt = None,
     skip_readonly_check: SkipReadonlyCheckOpt = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Only log which symlinks would be created or removed.",
+        ),
+    ] = False,
 ) -> None:
     """Trigger a one-shot full library scan.
 
@@ -230,24 +237,23 @@ def scan(
         return
 
     verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
+    _check_probers(config)
 
     state = PipelineFactory.build_state_store(config)
-    _clean_symlinks_on_reset(state, config)
-    factory = PipelineFactory(state=state)
-    total = ScanResult()
-
-    for library in config.libraries:
-        pipeline = factory.for_scan(config, library)
-        processor = LibraryProcessor(pipeline)
-        result = processor.process_library(library)
-        total.merge(result)
+    factory = PipelineFactory(state=state, dry_run=dry_run)
+    try:
+        total = _scan_all(config, factory, threading.Event())
+    finally:
+        state.close()
 
     _LOGGER.info(
-        "Scan complete: %d created, %d removed, %d unchanged, "
+        "Scan complete%s: %d created, %d removed, %d unchanged, %d probed, "
         "%d skipped (cached), %d filtered (non-media), %d errors",
+        " (dry run, nothing changed)" if dry_run else "",
         total.created,
         total.removed,
         total.unchanged,
+        total.probed,
         total.skipped,
         total.filtered,
         total.errors,
@@ -283,26 +289,25 @@ def watch(
         _LOGGER.warning("No triggers configured — nothing to watch")
         return
 
+    _check_probers(config)
+
     triggers = PipelineFactory.build_triggers(config.triggers)
     state = PipelineFactory.build_state_store(config)
-    _clean_symlinks_on_reset(state, config)
     factory = PipelineFactory(state=state)
-
-    def scan_all() -> ScanResult:
-        total = ScanResult()
-        for library in config.libraries:
-            pipeline = factory.for_watch(config, library)
-            processor = LibraryProcessor(pipeline)
-            result = processor.process_library(library)
-            total.merge(result)
-        return total
 
     watcher = Watcher(
         triggers=triggers,
-        scan_callback=scan_all,
+        scan_callback=lambda cancel: _scan_all(config, factory, cancel),
         debounce_seconds=config.watch.debounce,
+        heartbeat_file=_heartbeat_file(),
     )
-    watcher.run()
+    try:
+        watcher.run()
+    except OSError as exc:
+        _LOGGER.critical("Watch mode failed to start: %s", exc)
+        sys.exit(1)
+    finally:
+        state.close()
 
 
 @app.command("clean", help="Run stale symlink cleanup only.")
@@ -375,44 +380,86 @@ def paths(
         _emit(config.database.db_file.parent)
 
     for library in config.libraries:
-        base_output: Path | None = (
-            library.output_path
-            if library.output_path is not None
-            else config.output_path
-        )
-        _emit(base_output)
+        _emit(config.library_output_base(library))
         for sym_lib in library.symlink_libraries:
-            if sym_lib.output_path is not None:
-                _emit(sym_lib.output_path)
+            _emit(config.symlink_library_output(library, sym_lib))
 
 
-@app.command("status", help="Show cache stats and last run info.")
+@app.command("status", help="Show probe cache statistics.")
 def status(
     config_dir: ConfigDirOpt = DEFAULT_CONFIG_DIR,
     config_file_name: ConfigFileNameOpt = DEFAULT_CONFIG_FILE_NAME,
     log_level: LogLevelOpt = None,
     log_dir: LogDirOpt = None,
     log_file_name: LogFileNameOpt = None,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON.")
+    ] = False,
 ) -> None:
-    """Show cache stats and last run info.
-
-    Displays a summary of the current cache state and when the last scan
-    was performed.
-    """
+    """Show probe cache statistics and configured output directories."""
     config = _init_config(
         config_dir, config_file_name, log_level, log_dir, log_file_name
     )
-    _LOGGER.info("Showing status")
-
     state = PipelineFactory.build_state_store(config)
-    stats = state.get_stats()
+    try:
+        stats = state.get_stats()
+    finally:
+        state.close()
 
-    _LOGGER.info(
-        "Cache stats: %d total, %d matched, last scan: %s",
-        stats.get("total_cached", 0),
-        stats.get("matched", 0),
-        stats.get("last_scan_time"),
+    outputs = {
+        library.name: [
+            str(config.symlink_library_output(library, sym_lib))
+            for sym_lib in library.symlink_libraries
+        ]
+        for library in config.libraries
+    }
+    if as_json:
+        typer.echo(json.dumps({**stats, "outputs": outputs}, indent=2))
+        return
+
+    last = stats.get("last_probe_time")
+    last_str = (
+        datetime.fromtimestamp(last).isoformat(sep=" ", timespec="seconds")
+        if last
+        else "never"
     )
+    typer.echo(f"Boomarr {VERSION}")
+    typer.echo(f"Cached files:     {stats.get('total_cached', 0)}")
+    typer.echo(f"Without audio:    {stats.get('without_audio', 0)}")
+    typer.echo(f"Last probe:       {last_str}")
+    languages = stats.get("languages") or {}
+    if languages:
+        top = ", ".join(
+            f"{lang} ({count})" for lang, count in list(languages.items())[:10]
+        )
+        typer.echo(f"Audio languages:  {top}")
+    for name, paths in outputs.items():
+        typer.echo(f"Library '{name}':")
+        for path in paths:
+            typer.echo(f"  -> {path}")
+
+
+@app.command(
+    "healthcheck",
+    help="Exit 0 if a running 'watch' process is healthy (for Docker/Kubernetes).",
+)
+def healthcheck(
+    max_age: Annotated[
+        float,
+        typer.Option(help="Maximum heartbeat age in seconds."),
+    ] = HEARTBEAT_MAX_AGE,
+) -> None:
+    """Check the heartbeat file written by ``boomarr watch``."""
+    heartbeat = _heartbeat_file()
+    try:
+        age = time.time() - heartbeat.stat().st_mtime
+    except OSError:
+        typer.echo(f"unhealthy: no heartbeat at '{heartbeat}'", err=True)
+        raise typer.Exit(1)
+    if age > max_age:
+        typer.echo(f"unhealthy: heartbeat is {age:.0f}s old", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"healthy: heartbeat {age:.0f}s ago")
 
 
 def main() -> None:

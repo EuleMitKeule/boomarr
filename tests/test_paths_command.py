@@ -105,8 +105,8 @@ class TestPathsCommand:
         lines = [line for line in result.output.strip().splitlines() if line]
         assert set(lines) == {str(log_dir), str(tmp_path)}
 
-    def test_no_duplicate_paths(self, tmp_path: Path) -> None:
-        """Two symlink libraries with the same resolved path should appear once."""
+    def test_duplicate_symlink_outputs_rejected(self, tmp_path: Path) -> None:
+        """Two symlink libraries with the same resolved path are a config error."""
         _write_config(
             tmp_path,
             {
@@ -133,12 +133,9 @@ class TestPathsCommand:
                 ],
             },
         )
-        result = runner.invoke(
-            app, ["paths", "--config-dir", str(tmp_path)], catch_exceptions=False
-        )
-        assert result.exit_code == 0
-        lines = [line for line in result.output.strip().splitlines() if line]
-        assert len(lines) == len(set(lines))
+        result = runner.invoke(app, ["paths", "--config-dir", str(tmp_path)])
+        assert result.exit_code == 1
+        assert "same output directory" in result.output
 
     def test_each_path_on_own_line(self, tmp_path: Path) -> None:
         """Output must be newline-separated (suitable for shell `read`)."""

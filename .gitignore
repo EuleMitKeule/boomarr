@@ -209,3 +209,4 @@ __marimo__/
 config/
 config-docker/
 tests/output/
+*.log.*

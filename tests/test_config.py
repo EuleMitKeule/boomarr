@@ -245,7 +245,14 @@ class TestLoadConfigFileCreation:
         load_config(tmp_path, "config.yml")
         with (tmp_path / "config.yml").open() as f:
             data = yaml.safe_load(f)
-        assert data is None
+        # The template only activates the global output path; libraries are
+        # commented out so a fresh install never scans guessed paths.
+        assert data == {"output_path": "/media/filtered"}
+
+    def test_template_matches_repository_example(self) -> None:
+        root = Path(__file__).parent.parent
+        bundled = root / "boomarr" / "config.example.yml"
+        assert bundled.read_text() == (root / "config.example.yml").read_text()
 
     def test_auto_created_config_causes_no_env_var_warnings(
         self,
