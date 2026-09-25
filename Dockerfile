@@ -5,7 +5,7 @@ ARG PYTHON_VERSION=3.14
 # Statically linked ffprobe (amd64 + arm64). Boomarr only needs ffprobe, so
 # this avoids pulling the full Debian ffmpeg package and its ~400 MB of
 # shared libraries into the image.
-FROM mwader/static-ffmpeg:8.0 AS ffmpeg
+FROM mwader/static-ffmpeg:9.0 AS ffmpeg
 
 FROM ghcr.io/astral-sh/uv:0.9 AS uv
 
