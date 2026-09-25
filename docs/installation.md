@@ -3,8 +3,8 @@
 - [Docker Compose](#docker-compose) (recommended)
 - [Docker CLI](#docker-cli)
 - [Unraid](#unraid)
-- [Kubernetes / Helm](#kubernetes--helm)
-- [pip / pipx / uv (bare metal)](#pip--pipx--uv-bare-metal)
+- [Kubernetes with Helm](#kubernetes-with-helm)
+- [pip, pipx or uv (bare metal)](#pip-pipx-or-uv-bare-metal)
 - [Updating](#updating)
 
 Whatever you choose, two rules matter more than anything else:
@@ -89,7 +89,7 @@ A template is available at
 
 `PUID=99`/`PGID=100` (nobody/users) are the Unraid defaults.
 
-## Kubernetes / Helm
+## Kubernetes with Helm
 
 The chart is published as an OCI artifact:
 
@@ -138,7 +138,7 @@ probe cache is SQLite) and restarts the pod when the config changes. See
 [`charts/boomarr/values.yaml`](https://github.com/EuleMitKeule/boomarr/blob/master/charts/boomarr/values.yaml) for all
 options.
 
-## pip / pipx / uv (bare metal)
+## pip, pipx or uv (bare metal)
 
 Requires Python 3.14+ and `ffprobe` (package `ffmpeg`).
 

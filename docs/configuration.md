@@ -20,7 +20,7 @@ warning (e.g. `Unknown config option 'libraries[0].symlink_libraries[0].filters[
 - [Probers](#probers)
 - [Database (probe cache)](#database-probe-cache)
 - [Logging](#logging)
-- [Environment variables & CLI options](#environment-variables--cli-options)
+- [Environment variables and CLI options](#environment-variables-and-cli-options)
 - [Output directory naming](#output-directory-naming)
 - [Validation rules](#validation-rules)
 
@@ -360,7 +360,7 @@ probers:
 Boomarr checks at startup that ffprobe is available and exits with a clear
 error otherwise. The Docker image ships a static ffprobe build.
 
-### `sonarr` / `radarr`
+### Sonarr and Radarr probers
 
 Sonarr and Radarr already know the audio languages of every file they
 imported. Asking them is much faster than probing, especially on network
@@ -430,7 +430,7 @@ logging:
 The log directory can only be set via `LOG_DIR` / `--log-dir` (default
 `<config>/logs` in Docker); set it to an empty string to disable file logging.
 
-## Environment variables & CLI options
+## Environment variables and CLI options
 
 | Env var | CLI option | Description |
 | --- | --- | --- |

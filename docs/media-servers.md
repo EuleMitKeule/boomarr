@@ -70,7 +70,7 @@ linked automatically, see `sidecar_extensions`.
 Boomarr only reads your media, so no changes are required. For instant
 updates after an import, enable the [HTTP server](configuration.md#http-server-webhooks-metrics-status)
 and add a webhook. To skip ffprobe entirely for files Sonarr/Radarr already
-analysed, use the [`sonarr`/`radarr` probers](configuration.md#sonarr--radarr).
+analysed, use the [`sonarr`/`radarr` probers](configuration.md#sonarr-and-radarr-probers).
 
 ## Automatic media server refresh
 
