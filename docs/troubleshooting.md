@@ -1,6 +1,26 @@
 # Troubleshooting & FAQ
 
-### "Source directory '…' is writable! … Aborting."
+### I forgot the password / cannot log in {#authentication}
+
+Stop Boomarr and delete `auth.json` in the config directory (or set
+`BOOMARR_USERNAME`/`BOOMARR_PASSWORD` and restart). On the next start the
+web UI asks for a new admin account. With `auth.method: external` make sure
+your proxy's address is listed in `server.trusted_proxies`; otherwise the
+user header is ignored. See [Web UI & security](web-ui.md#authentication).
+
+### "No libraries configured yet" {#libraries}
+
+Add one in the web UI (*Libraries* → *Add library*) or in `boomarr.yml`,
+see [libraries](configuration.md#libraries). Scans are skipped until a
+library exists.
+
+### "Scan skipped: Source directories must be mounted read-only"
+
+In watch mode with the web UI, Boomarr keeps running when a source is
+writable, but refuses to scan (the dashboard shows the problem). Remount the
+source read-only (`:ro`); the next scan runs normally.
+
+### "Source directory '…' is writable! … Aborting." {#read-only-sources}
 
 Mount the source read-only (`:ro` in Docker, `readOnly: true` on
 Kubernetes), or make sure the Boomarr user has no write permission on it.
@@ -35,7 +55,7 @@ which almost always means a network share is not mounted. Fix the mount; the
 next scan continues normally. If you really emptied the source on purpose,
 delete the output folder by hand.
 
-### "FFprobe executable 'ffprobe' not found"
+### "FFprobe executable 'ffprobe' not found" {#probers}
 
 Bare metal only: install FFmpeg (`apt install ffmpeg`, `brew install ffmpeg`)
 or set `probers: [{type: ffprobe, path: /path/to/ffprobe}]`.
@@ -73,7 +93,7 @@ supported by Plex, Jellyfin and Emby.
 Enable the [HTTP server](configuration.md#http-server-webhooks-metrics-status)
 and add a webhook in Sonarr/Radarr.
 
-### "Removal guard: refusing to remove …"
+### "Removal guard: refusing to remove …" {#removal-guard}
 
 A scan wanted to remove more than half of the links of a folder. If that is
 intended (you changed filters or removed media on purpose), run

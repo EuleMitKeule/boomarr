@@ -32,6 +32,22 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if eq .Values.configMode "ui" }}
+      initContainers:
+        # Seed boomarr.yml once; afterwards the web UI owns the file.
+        - name: seed-config
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [sh, -c, "test -e /config/boomarr.yml || cp /seed/boomarr.yml /config/boomarr.yml"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-file
+              mountPath: /seed
+              readOnly: true
+      {{- end }}
       containers:
         - name: boomarr
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -54,6 +70,18 @@ spec:
                 secretKeyRef:
                   name: {{ include "boomarr.secretName" . }}
                   key: {{ .Values.server.existingSecretKey }}
+            {{- end }}
+            {{- if or .Values.auth.existingSecret (and .Values.auth.username .Values.auth.password) }}
+            - name: BOOMARR_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "boomarr.authSecretName" . }}
+                  key: {{ .Values.auth.usernameKey }}
+            - name: BOOMARR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "boomarr.authSecretName" . }}
+                  key: {{ .Values.auth.passwordKey }}
             {{- end }}
             {{- if .Values.notifyUrls }}
             - name: BOOMARR_NOTIFY_URLS
@@ -83,10 +111,12 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            {{- if eq .Values.configMode "configMap" }}
             - name: config-file
               mountPath: /config/boomarr.yml
               subPath: boomarr.yml
               readOnly: true
+            {{- end }}
             - name: tmp
               mountPath: /tmp
             {{- with .Values.volumeMounts }}

@@ -21,6 +21,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.14"
+  NODE_VERSION: "24"
   SONAR_PROJECT_KEY: EuleMitKeule_boomarr
   SONAR_PROJECT_ORGANIZATION: eule
 
@@ -50,6 +51,34 @@ jobs:
       - name: Type check (ty)
         run: uv run ty check
 
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
   tests:
     runs-on: ubuntu-latest
     steps:
@@ -71,7 +100,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups --locked
 
-      - name: Run tests
+      - name: Run tests (100% line and branch coverage required)
         run: uv run pytest --cov=boomarr --cov-report=xml --cov-report=term tests
 
       - name: Upload coverage report
@@ -156,6 +185,10 @@ jobs:
             boomarr:ci
           sleep 10
           docker exec boomarr-watch boomarr healthcheck
+          # Web UI and API are served
+          docker exec boomarr-watch python -c "import urllib.request as u; assert b'id=\"root\"' in u.urlopen('http://127.0.0.1:9797/').read()"
+          docker exec boomarr-watch python -c "import json, urllib.request as u; assert json.load(u.urlopen('http://127.0.0.1:9797/api/v1/auth/state'))['setup_required']"
+          docker logs boomarr-watch 2>&1 | grep -q "Setup token"
           docker stop boomarr-watch
           docker logs boomarr-watch
           docker rm boomarr-watch
@@ -177,6 +210,9 @@ jobs:
             --set server.enabled=true --set serviceMonitor.enabled=true \
             --set notifyUrls[0]=json://x --set server.apiKey=k \
             --set persistence.config.existingClaim=cfg > /dev/null
+          helm template boomarr charts/boomarr \
+            --set configMode=configMap --set ingress.enabled=true \
+            --set auth.username=admin --set auth.password=secret123 > /dev/null
 
   sonar:
     needs: tests
@@ -208,6 +244,7 @@ jobs:
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=boomarr
+            -Dsonar.exclusions=boomarr/web/dist/**
             -Dsonar.tests=tests
             -Dsonar.python.version=${{ env.PYTHON_VERSION }}
             -Dsonar.text.inclusions=**/*.py

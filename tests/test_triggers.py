@@ -1,7 +1,6 @@
-"""Tests for the trigger config, pipeline trigger building, and watcher."""
+"""Tests for the trigger config, pipeline trigger building and triggers."""
 
 import asyncio
-import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -18,11 +17,9 @@ from boomarr.config import (
     WatchConfig,
 )
 from boomarr.const import DEFAULT_WATCH_DEBOUNCE, TriggerType
-from boomarr.models import ScanEvent, ScanResult
+from boomarr.models import ScanEvent
 from boomarr.pipeline import PipelineFactory
-from boomarr.triggers.base import TriggerSource
 from boomarr.triggers.schedule import ScheduleTrigger
-from boomarr.watcher import Watcher
 
 # ------------------------------------------------------------------ #
 # ScanEvent model
@@ -231,108 +228,3 @@ class TestScheduleTrigger:
 
         asyncio.run(_run())
         assert queue.qsize() == 0
-
-
-# ------------------------------------------------------------------ #
-# Watcher
-# ------------------------------------------------------------------ #
-
-
-class _ImmediateTrigger(TriggerSource):
-    """Test trigger that fires one event then stops."""
-
-    async def start(self, queue: asyncio.Queue[ScanEvent]) -> None:
-        queue.put_nowait(ScanEvent(source="immediate", timestamp=time.monotonic()))
-
-    async def stop(self) -> None:
-        pass
-
-
-class TestWatcher:
-    def test_single_event_triggers_scan(self) -> None:
-        results: list[ScanResult] = []
-
-        def scan_all(cancel: threading.Event) -> ScanResult:
-            r = ScanResult(created=1)
-            results.append(r)
-            return r
-
-        watcher = Watcher(
-            triggers=[_ImmediateTrigger()],
-            scan_callback=scan_all,
-            debounce_seconds=0.05,
-        )
-
-        async def _run() -> None:
-            # Let the watcher process the event, then shut it down.
-            async def _shutdown_soon() -> None:
-                await asyncio.sleep(0.3)
-                watcher._request_shutdown()
-
-            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
-            await watcher._run()
-
-        asyncio.run(_run())
-        assert len(results) == 1
-
-    def test_debounce_collapses_events(self) -> None:
-        call_count = 0
-
-        def scan_all(cancel: threading.Event) -> ScanResult:
-            nonlocal call_count
-            call_count += 1
-            return ScanResult()
-
-        watcher = Watcher(
-            triggers=[],
-            scan_callback=scan_all,
-            debounce_seconds=0.1,
-        )
-
-        async def _run() -> None:
-            # Put 5 events rapidly into the queue.
-            for _ in range(5):
-                watcher._queue.put_nowait(
-                    ScanEvent(source="burst", timestamp=time.monotonic())
-                )
-
-            async def _shutdown_soon() -> None:
-                await asyncio.sleep(0.5)
-                watcher._request_shutdown()
-
-            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
-            await watcher._run()
-
-        asyncio.run(_run())
-        # All 5 events should collapse into a single scan.
-        assert call_count == 1
-
-    def test_shutdown_event_stops_worker(self) -> None:
-        watcher = Watcher(
-            triggers=[],
-            scan_callback=lambda cancel: ScanResult(),
-            debounce_seconds=0.05,
-        )
-
-        async def _run() -> None:
-            watcher._request_shutdown()
-            await watcher._worker()
-
-        asyncio.run(_run())
-
-    def test_empty_triggers_exits_cleanly(self) -> None:
-        """Empty trigger list should exit without blocking."""
-        watcher = Watcher(
-            triggers=[],
-            scan_callback=lambda cancel: ScanResult(),
-        )
-
-        async def _run() -> None:
-            async def _shutdown_soon() -> None:
-                await asyncio.sleep(0.1)
-                watcher._request_shutdown()
-
-            _task = asyncio.create_task(_shutdown_soon())  # noqa: RUF006
-            await watcher._run()
-
-        asyncio.run(_run())

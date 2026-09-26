@@ -18,9 +18,19 @@ import typer
 from dotenv import load_dotenv
 from rich.console import Console
 
-from boomarr.config import Config, LibraryConfig, SQLiteDatabaseConfig, load_config
+from boomarr.auth_store import AuthStore
+from boomarr.config import (
+    Config,
+    ConfigError,
+    LibraryConfig,
+    SQLiteDatabaseConfig,
+    cli_values,
+    load_config,
+)
+from boomarr.config_store import ConfigStore
 from boomarr.const import (
     APP_NAME,
+    AUTH_STATE_FILE_NAME,
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONFIG_FILE_NAME,
     DEFAULT_HEARTBEAT_FILE_NAME,
@@ -35,16 +45,16 @@ from boomarr.const import (
     ENV_SKIP_READONLY_CHECK,
     HEARTBEAT_MAX_AGE,
     VERSION,
+    AuthMethod,
     LogLevel,
 )
+from boomarr.daemon import Daemon
 from boomarr.hooks import build_hooks
 from boomarr.log import setup_logging
 from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
 from boomarr.runner import PostScanHook, ScanRunner
-from boomarr.server import HttpServer
 from boomarr.status import collect_status, render_plain, render_rich
-from boomarr.watcher import Watcher
 
 _LOGGER = logging.getLogger(APP_NAME)
 
@@ -262,7 +272,7 @@ def scan(
     )
 
 
-@app.command("watch", help="Start continuous watch mode.")
+@app.command("watch", help="Run continuously: triggers, webhooks and the web UI.")
 def watch(
     config_dir: ConfigDirOpt = DEFAULT_CONFIG_DIR,
     config_file_name: ConfigFileNameOpt = DEFAULT_CONFIG_FILE_NAME,
@@ -273,55 +283,52 @@ def watch(
 ) -> None:
     """Start continuous watch mode.
 
-    Monitors the source library for changes and keeps symlinks up to date
-    without requiring manual rescans.
+    Keeps the output libraries up to date (schedule, webhooks, manual scans)
+    and serves the web UI and REST API.
     """
-    config = _init_config(
-        config_dir, config_file_name, log_level, log_dir, log_file_name
-    )
-    _LOGGER.info("Starting watch mode")
-
-    verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
-
-    if not config.libraries:
-        _LOGGER.warning("No libraries configured — nothing to watch")
-        return
-
-    _check_probers(config)
-
-    triggers = PipelineFactory.build_triggers(config.triggers)
-    if not triggers and not config.server.enabled:
-        _LOGGER.warning("No triggers configured — nothing to watch")
-        return
-    state = PipelineFactory.build_state_store(config)
-    factory = PipelineFactory(state=state)
-    runner = ScanRunner(config, factory, hooks=_build_hooks(config))
-
-    if config.server.enabled:
-        server = config.server
-        triggers.append(
-            HttpServer(
-                host=server.host,
-                port=server.port,
-                api_key=(server.api_key.get_secret_value() if server.api_key else None),
-                metrics_auth=server.metrics_auth,
-                status_provider=runner.status,
-            )
-        )
-
-    watcher = Watcher(
-        triggers=triggers,
-        scan_callback=runner.run,
-        debounce_seconds=config.watch.debounce,
-        heartbeat_file=_heartbeat_file(),
+    store = ConfigStore(
+        config_dir, config_file_name, cli_values(log_level, log_dir, log_file_name)
     )
     try:
-        watcher.run()
-    except OSError as exc:
-        _LOGGER.critical("Watch mode failed to start: %s", exc)
+        config = store.load()
+    except ConfigError as exc:
+        typer.echo(f"Invalid configuration in '{store.path}':\n{exc.message}", err=True)
         sys.exit(1)
-    finally:
-        state.close()
+    setup_logging(config.logging, tz=config.general.tz)
+    _LOGGER.info("boomarr version %s starting watch mode", VERSION)
+    for warning in config.warnings:
+        _LOGGER.warning(warning)
+
+    if not config.server.enabled:
+        # Without the web UI nothing can be fixed at runtime: fail fast.
+        verify_source_dirs_readonly(config.libraries, skip=skip_readonly_check)
+        if not config.libraries:
+            _LOGGER.warning("No libraries configured — nothing to watch")
+            return
+        _check_probers(config)
+        if not config.triggers:
+            _LOGGER.warning("No triggers configured — nothing to watch")
+            return
+
+    auth = AuthStore(config_dir / AUTH_STATE_FILE_NAME)
+    auth.bootstrap_from_env()
+    if (
+        config.server.enabled
+        and config.auth.method == AuthMethod.FORMS
+        and not auth.has_credentials
+    ):
+        _LOGGER.warning(
+            "No admin account yet: open the web UI to create one. Setup token "
+            "(only needed when not connecting from a local network): %s",
+            auth.setup_token,
+        )
+    daemon = Daemon(
+        store,
+        auth,
+        heartbeat_file=_heartbeat_file(),
+        skip_readonly_check=skip_readonly_check,
+    )
+    daemon.run()
 
 
 @app.command("clean", help="Run stale symlink cleanup only.")

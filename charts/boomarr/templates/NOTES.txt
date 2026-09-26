@@ -1,17 +1,26 @@
-Boomarr is running in watch mode.
+Boomarr is running.
+{{- if .Values.server.enabled }}
 
-  kubectl logs -f deploy/{{ include "boomarr.fullname" . }}
-  kubectl exec deploy/{{ include "boomarr.fullname" . }} -- boomarr status
+Web UI:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/
+{{- end }}
+{{- else }}
+  kubectl port-forward svc/{{ include "boomarr.fullname" . }} {{ .Values.service.port }}
+  then open http://localhost:{{ .Values.service.port }}/
+{{- end }}
+{{- if not (or .Values.auth.existingSecret (and .Values.auth.username .Values.auth.password)) }}
+
+No admin account is configured: create it in the web UI. From outside a
+private network you need the setup token printed in the log:
+  kubectl logs deploy/{{ include "boomarr.fullname" . }} | grep "Setup token"
+{{- end }}
+
+Webhook URL for Sonarr/Radarr (Settings → Connect → Webhook), API key from
+Settings → Security in the web UI:
+  http://{{ include "boomarr.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/api/v1/webhook/sonarr
+{{- end }}
 
 Remember: source media must be mounted read-only, and your media server
 must see the source files under the same paths as Boomarr.
-{{- if .Values.server.enabled }}
-
-Webhook URL for Sonarr/Radarr (Settings → Connect → Webhook):
-  http://{{ include "boomarr.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/api/v1/webhook/sonarr
-Prometheus metrics: http://{{ include "boomarr.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/metrics
-{{- if not (or .Values.server.apiKey .Values.server.existingSecret) }}
-
-WARNING: server.apiKey is empty, anyone in the cluster can trigger scans.
-{{- end }}
-{{- end }}

@@ -63,6 +63,14 @@ class MediaServerType(StrEnum):
     EMBY = "emby"
 
 
+class AuthMethod(StrEnum):
+    """How users authenticate against the web UI."""
+
+    FORMS = "forms"
+    EXTERNAL = "external"
+    NONE = "none"
+
+
 class AudioLanguageMatchMode(StrEnum):
     """How the configured languages of an audio_language filter are combined."""
 
@@ -79,6 +87,10 @@ ENV_SKIP_READONLY_CHECK = "DANGEROUS_SKIP_READONLY_CHECK"
 ENV_WEBHOOK_API_KEY = "WEBHOOK_API_KEY"
 ENV_API_KEY = "BOOMARR_API_KEY"
 ENV_NOTIFY_URLS = "BOOMARR_NOTIFY_URLS"
+ENV_ADMIN_USERNAME = "BOOMARR_USERNAME"
+ENV_ADMIN_PASSWORD = "BOOMARR_PASSWORD"  # noqa: S105 - env var name
+ENV_SECRET_KEY = "BOOMARR_SECRET_KEY"  # noqa: S105 - env var name
+AUTH_STATE_FILE_NAME = "auth.json"
 
 ENV_PREFIX_GENERAL = ""
 ENV_PREFIX_LOGGING = "LOG"

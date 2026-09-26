@@ -27,6 +27,8 @@ services:
       PUID: 1000
       PGID: 1000
       TZ: Europe/Berlin
+    ports:
+      - "9797:9797"                  # web UI
     volumes:
       - ./config:/config
       - /srv/data/media:/data/media:ro
@@ -37,16 +39,19 @@ services:
 
 ```bash
 docker compose up -d
-docker compose logs -f boomarr        # a template config is created on first start
-$EDITOR ./config/boomarr.yml
-docker compose restart boomarr
 ```
+
+Open `http://<host>:9797/`, create the admin account and add your first
+library in **Libraries** (see [Web UI](web-ui.md#first-start)). Prefer
+YAML? Edit `./config/boomarr.yml` instead, the UI and the file are always in
+sync.
 
 The image:
 
 - runs `boomarr watch` by default,
 - runs as `PUID`/`PGID` (default `1000`) and also supports `user: 1000:1000`
   (rootless, no privilege switching),
+- serves the [web UI](web-ui.md) on port `9797`,
 - has a built-in `HEALTHCHECK` (`boomarr healthcheck`),
 - is published for `linux/amd64` and `linux/arm64`
   (Raspberry Pi 4/5, Apple Silicon, ARM NAS),
@@ -55,18 +60,17 @@ The image:
 
 ### Validate before going live
 
-```bash
-docker compose run --rm boomarr boomarr scan --dry-run
-```
-
-logs every symlink that *would* be created or removed without touching
-anything.
+Press **Dry run** in the web UI (or run
+`docker compose run --rm boomarr boomarr scan --dry-run`): Boomarr lists
+every symlink that *would* be created or removed without touching anything
+(*Activity* → click the scan).
 
 ## Docker CLI
 
 ```bash
 docker run -d --name boomarr --restart unless-stopped \
   -e PUID=1000 -e PGID=1000 -e TZ=Europe/Berlin \
+  -p 9797:9797 \
   -v /srv/boomarr:/config \
   -v /srv/data/media:/data/media:ro \
   -v /srv/data/filtered:/data/filtered \
@@ -84,8 +88,8 @@ A template is available at
 3. Map your media share **read-only** to the same container path your
    Plex/Jellyfin container uses (the template defaults to `/data/media`), and
    the output share read-write (`/data/filtered`).
-4. Start the container, edit `/mnt/user/appdata/boomarr/boomarr.yml`,
-   restart.
+4. Start the container and click *WebUI* in its context menu to create the
+   admin account and add libraries.
 
 `PUID=99`/`PGID=100` (nobody/users) are the Unraid defaults.
 
@@ -125,12 +129,22 @@ volumeMounts:
     mountPath: /data/filtered
     subPath: filtered
 
-server:
-  enabled: true                     # webhooks, /metrics, /api/v1/status
-  existingSecret: boomarr-api       # key: api-key
+auth:
+  existingSecret: boomarr-admin     # keys: username, password
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: boomarr.example.com
+      paths: [{path: /, pathType: Prefix}]
 serviceMonitor:
   enabled: true                     # Prometheus Operator
 ```
+
+By default (`configMode: ui`) `config` is only the initial `boomarr.yml`;
+afterwards the web UI owns the file on the config volume. For GitOps set
+`configMode: configMap`: the file is mounted read-only from the ConfigMap
+and the UI shows the settings without allowing changes.
 
 The chart runs rootless with a read-only root filesystem, dropped
 capabilities and `RuntimeDefault` seccomp, uses a `Recreate` strategy (the
@@ -145,7 +159,7 @@ Requires Python 3.14+ and `ffprobe` (package `ffmpeg`).
 ```bash
 pipx install boomarr        # or: uv tool install boomarr
 boomarr --help
-CONFIG_DIR=/etc/boomarr boomarr scan --dry-run
+CONFIG_DIR=/etc/boomarr boomarr watch      # web UI on http://localhost:9797/
 ```
 
 A hardened systemd unit is available at

@@ -16,8 +16,13 @@ library, or "original + German dub".
 
 No files are copied, moved or modified, and no disk space is used.
 
+![Dashboard](assets/screenshots/dashboard.png)
+
 ## Highlights
 
+- **Web UI** to configure and monitor everything: visual library and filter
+  editor, live scan progress, history of every change, health checks, logs;
+  login with password, **OIDC single sign-on** or reverse-proxy auth.
 - Filter by **audio language** (`ger`/`deu`/`de` are the same), resolution,
   video/audio codec and channels; combine and invert filters.
 - **Fast and always correct**: probe results are cached, every scan
@@ -32,6 +37,7 @@ No files are copied, moved or modified, and no disk space is used.
 ## Next steps
 
 1. [Install Boomarr](installation.md)
-2. [Configure your libraries](configuration.md)
+2. Open the [web UI](web-ui.md) on port 9797 and add your libraries (or use
+   the [YAML reference](configuration.md))
 3. [Set up your media server](media-servers.md) — read the *path mapping*
    section, it is the most common pitfall.

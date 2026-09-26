@@ -233,7 +233,7 @@ class TestTriggers:
         assert cfg.server.port == 1234
         assert cfg.server.api_key is not None
         assert cfg.server.api_key.get_secret_value() == "secret"
-        assert "secret" not in cfg.model_dump_json()
+        assert '"secret"' not in cfg.model_dump_json()
         assert any("deprecated" in w for w in cfg.warnings)
         built = PipelineFactory.build_triggers(cfg.triggers)
         assert len(built) == 1

@@ -2,7 +2,9 @@
 
 Boomarr is configured with a single YAML file, `boomarr.yml`, inside the
 config directory (`/config` in Docker, `./config` otherwise). If the file
-does not exist, a commented template is created on first start.
+does not exist, a commented template is created on first start. Every option
+on this page can also be changed in the [web UI](web-ui.md), which edits the
+same file.
 
 Unknown or misspelled options never prevent startup, but are logged as a
 warning (e.g. `Unknown config option 'libraries[0].symlink_libraries[0].filters[0].langauges'`).
@@ -14,6 +16,7 @@ warning (e.g. `Unknown config option 'libraries[0].symlink_libraries[0].filters[
 - [Filters](#filters)
 - [Triggers (watch mode)](#triggers-watch-mode)
 - [HTTP server: webhooks, metrics, status](#http-server-webhooks-metrics-status)
+- [Authentication](#authentication)
 - [Removal guard](#removal-guard)
 - [Notifications](#notifications)
 - [Media server refresh](#media-server-refresh)
@@ -238,14 +241,17 @@ triggers:
 
 ## HTTP server: webhooks, metrics, status
 
-`boomarr watch` can run a small built-in HTTP server:
+`boomarr watch` runs a web server for the [web UI](web-ui.md), the REST
+API, webhooks and metrics:
 
 ```yaml
 server:
-  enabled: true
+  enabled: true          # default
   host: 0.0.0.0          # default
   port: 9797             # default
-  api_key: change-me     # optional, falls back to BOOMARR_API_KEY
+  url_base: ""           # e.g. /boomarr behind a reverse proxy
+  trusted_proxies: []    # proxies whose X-Forwarded-* headers are trusted
+  api_key: change-me     # optional; generated on first start otherwise
   metrics_auth: false    # require the API key for /metrics too
 ```
 
@@ -267,8 +273,9 @@ The latter is what Sonarr/Radarr offer:
 > - Password: your API key (username can be anything)
 > - Triggers: *On File Import*, *On File Upgrade*, *On Rename*, *On Delete*
 
-Without an API key anyone who can reach the port can trigger scans (they
-cannot do anything else). Keep the port on an internal network.
+The API key is generated on first start and shown in the web UI
+(Settings → Security). Requests from signed-in browsers work as well, and
+with `auth.method: none` or `auth.local_bypass` no key is needed.
 
 Metrics include `boomarr_scans_total{status}`, `boomarr_scan_duration_seconds`,
 `boomarr_last_scan_timestamp_seconds`, `boomarr_links{output}`,
@@ -280,6 +287,24 @@ Metrics include `boomarr_scans_total{status}`, `boomarr_scan_duration_seconds`,
 
 The older `triggers: [{type: webhook, ...}]` form still works and is turned
 into a `server` section (a deprecation warning is logged).
+
+## Authentication
+
+```yaml
+auth:
+  method: forms            # forms (login page) | external (reverse proxy) | none
+  local_bypass: false
+  session_days: 30
+  external_header: Remote-User
+  oidc:
+    enabled: false
+    issuer: https://auth.example.com/application/o/boomarr/
+    client_id: boomarr
+    client_secret: change-me
+```
+
+See [Web UI & security](web-ui.md#authentication) for all options, single
+sign-on and reverse proxy setups.
 
 ## Removal guard
 
@@ -442,6 +467,8 @@ The log directory can only be set via `LOG_DIR` / `--log-dir` (default
 | `LOG_COLOR`, `LOG_FORMAT`, `LOG_ROTATION_ENABLED`, … | | Any `logging.*` option as `LOG_<OPTION>` / `LOG_ROTATION_<OPTION>`. |
 | `TZ` | | Timezone for timestamps. |
 | `BOOMARR_API_KEY` | | API key for the HTTP server when `server.api_key` is not set (`WEBHOOK_API_KEY` also works). |
+| `BOOMARR_USERNAME`, `BOOMARR_PASSWORD` | | Create/update the web UI admin account on start instead of the setup page. |
+| `BOOMARR_SECRET_KEY` | | Key for signing sessions (generated and stored in `auth.json` otherwise). |
 | `BOOMARR_NOTIFY_URLS` | | Whitespace separated Apprise URLs when `notifications.urls` is not set. |
 | `HEARTBEAT_FILE` | | Heartbeat file used by `boomarr healthcheck`. |
 | `PUID`, `PGID`, `UMASK` | | Docker only: user, group and umask Boomarr runs as. |

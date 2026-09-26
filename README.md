@@ -10,7 +10,7 @@
 
 [![Code Quality](https://github.com/EuleMitKeule/boomarr/actions/workflows/quality.yml/badge.svg)](https://github.com/EuleMitKeule/boomarr/actions/workflows/quality.yml)
 [![Publish](https://github.com/EuleMitKeule/boomarr/actions/workflows/publish.yml/badge.svg)](https://github.com/EuleMitKeule/boomarr/actions/workflows/publish.yml)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=EuleMitKeule_boomarr&metric=coverage)](https://sonarcloud.io/summary/new_code?id=EuleMitKeule_boomarr)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=EuleMitKeule_boomarr&metric=coverage)](https://sonarcloud.io/component_measures?id=EuleMitKeule_boomarr&metric=coverage)
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=EuleMitKeule_boomarr&metric=bugs)](https://sonarcloud.io/summary/new_code?id=EuleMitKeule_boomarr)
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=EuleMitKeule_boomarr&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=EuleMitKeule_boomarr)
 
@@ -35,7 +35,21 @@ and share it with whoever needs it.
 
 No files are copied, moved or modified, and no disk space is used.
 
+<p align="center">
+  <img src="docs/assets/screenshots/dashboard.png" alt="Boomarr dashboard" width="900">
+</p>
+
 ## Features
+
+- **Web UI for everything**: visual library and filter editor with folder
+  picker and output preview, live scan progress, a history of every link
+  that was created or removed, dry runs, health checks, live logs, backup &
+  restore, dark/light theme, mobile friendly. `boomarr.yml` stays the single
+  source of truth and can still be edited by hand.
+- **Secure by default**: login page with Argon2 password hashing, **OIDC
+  single sign-on** (Authentik, Authelia, Keycloak, Pocket ID, …),
+  reverse-proxy (forward auth) mode, optional bypass on the local network,
+  API key for webhooks and scripts, CSRF protection and a strict CSP.
 
 - **Any number of filtered libraries** per source, e.g. German-only,
   English-only and "German *and* English" side by side.
@@ -76,11 +90,20 @@ services:
       PUID: 1000
       PGID: 1000
       TZ: Europe/Berlin
+    ports:
+      - "9797:9797"                             # web UI
     volumes:
       - ./config:/config
       - /srv/data/media:/data/media:ro          # read-only!
       - /srv/data/filtered:/data/filtered
 ```
+
+```bash
+docker compose up -d
+```
+
+Open **http://&lt;host&gt;:9797**, create the admin account and add your
+libraries. Or, if you prefer YAML:
 
 ```yaml
 # config/boomarr.yml
@@ -107,10 +130,12 @@ libraries:
             languages: [deu]
 ```
 
-```bash
-docker compose run --rm boomarr boomarr scan --dry-run   # preview
-docker compose up -d
-```
+Use **Dry run** in the web UI (or `boomarr scan --dry-run`) to preview what
+would change.
+
+| Libraries | Activity | Settings |
+| --- | --- | --- |
+| ![Library editor](docs/assets/screenshots/library.png) | ![Scan history](docs/assets/screenshots/activity.png) | ![Security settings](docs/assets/screenshots/security.png) |
 
 > [!IMPORTANT]
 > Your media server must see the original files under **the same paths** as
@@ -124,6 +149,7 @@ docker compose up -d
 | --- | --- |
 | 📖 **[Documentation site](https://eulemitkeule.github.io/boomarr/)** | Everything below, nicely rendered |
 | [Installation](docs/installation.md) | Docker, Compose, Unraid, Helm, pip/pipx, systemd |
+| [Web UI & security](docs/web-ui.md) | First start, authentication, OIDC, reverse proxies, REST API |
 | [Configuration](docs/configuration.md) | All options, filters, triggers, environment variables |
 | [Media servers](docs/media-servers.md) | Path mapping, Plex, Jellyfin/Emby, Sonarr/Radarr, automatic refresh |
 | [How it works](docs/how-it-works.md) | Scan pipeline, safety guarantees, commands |
@@ -132,7 +158,7 @@ docker compose up -d
 ## Commands
 
 ```
-boomarr watch               run continuously (Docker default)
+boomarr watch               run continuously with web UI on :9797 (Docker default)
 boomarr scan [--dry-run] [--force]   one full scan (--force: bypass removal guard)
 boomarr clean               remove broken symlinks only
 boomarr status [--json]     last scan, cache, languages, triggers, links + filters per output
@@ -149,6 +175,7 @@ boomarr version
 | Split by audio language | ✅ | ❌ (metadata language) | ✅ |
 | Link type | symlink (any filesystem) | hardlink (same filesystem) | symlink |
 | Incremental / cached | ✅ | ✅ | ❌ |
+| Web UI | ✅ | Jellyfin plugin page | ❌ |
 | Webhook trigger | ✅ | ❌ | ❌ |
 | Resolution / codec filters | ✅ | ❌ | ❌ |
 | Metrics & notifications | ✅ | ❌ | ❌ |
@@ -157,9 +184,12 @@ boomarr version
 
 ```bash
 uv sync --all-groups
-uv run pytest                       # needs ffprobe for the integration test
+uv run pytest --cov=boomarr         # 100 % line + branch coverage is enforced
 uv run ruff check . && uv run ruff format --check . && uv run ty check
-docker compose -f docker-compose.dev.yml up --build
+
+cd frontend && npm ci
+npm run dev                         # UI on :5173, proxies /api to boomarr watch on :9797
+npm test && npm run build           # build goes to boomarr/web/dist
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Test media can be regenerated with

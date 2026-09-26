@@ -10,6 +10,18 @@ FROM mwader/static-ffmpeg:9.0 AS ffmpeg
 FROM ghcr.io/astral-sh/uv:0.12 AS uv
 
 # ---------------------------------------------------------------------------
+# Web UI: static files only, the runtime image contains no Node.js
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
+
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund
+COPY frontend ./
+RUN npm run build
+
+# ---------------------------------------------------------------------------
 # Build stage: resolve dependencies strictly from uv.lock
 # ---------------------------------------------------------------------------
 FROM python:${PYTHON_VERSION}-slim AS builder
@@ -29,6 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY README.md LICENSE.md ./
 COPY boomarr ./boomarr
+COPY --from=frontend /src/boomarr/web/dist ./boomarr/web/dist
 
 ARG VERSION=0.0.0-dev
 RUN --mount=type=cache,target=/root/.cache/uv \

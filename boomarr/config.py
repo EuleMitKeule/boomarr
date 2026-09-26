@@ -3,6 +3,7 @@
 Handles loading, parsing, and validation of Boomarr configuration.
 """
 
+import ipaddress
 import logging
 import os
 import sys
@@ -78,6 +79,7 @@ from boomarr.const import (
     ENV_PREFIX_LOGGING,
     ENV_WEBHOOK_API_KEY,
     AudioLanguageMatchMode,
+    AuthMethod,
     DatabaseType,
     LogLevel,
     MediaServerType,
@@ -333,7 +335,7 @@ class PostProbeFilterConfig(_ConfigModel):
 
     def default_suffix(self) -> str:
         """Return the suffix derived from the filter settings."""
-        return self.type.value
+        raise NotImplementedError
 
     def describe(self) -> str:
         """Return a short human-readable description, e.g. for ``status``."""
@@ -539,19 +541,103 @@ def _api_key_from_env(v: object) -> object:
     return v
 
 
-class ServerConfig(_ConfigModel):
-    """Built-in HTTP server (watch mode): health, metrics, scan API, webhooks."""
+def _normalize_url_base(value: str) -> str:
+    """Return ``/sub/path`` (no trailing slash) or an empty string."""
+    value = value.strip().strip("/")
+    return f"/{value}" if value else ""
 
-    enabled: bool = False
+
+def _validate_networks(values: list[str]) -> list[str]:
+    for value in values:
+        try:
+            ipaddress.ip_network(value.strip(), strict=False)
+        except ValueError:
+            raise ValueError(f"'{value}' is not an IP address or network") from None
+    return [v.strip() for v in values]
+
+
+class ServerConfig(_ConfigModel):
+    """Web UI, REST API, metrics and webhooks served by ``boomarr watch``."""
+
+    enabled: bool = True
     host: str = DEFAULT_WEBHOOK_HOST
     port: int = Field(default=DEFAULT_WEBHOOK_PORT, ge=1, le=65535)
+    url_base: str = ""
     api_key: SecretStr | None = Field(default=None, validate_default=True)
     metrics_auth: bool = False
+    trusted_proxies: list[str] = Field(default_factory=list)
 
     @field_validator("api_key", mode="before")
     @classmethod
     def _coerce_api_key(cls, v: object) -> object:
         return _api_key_from_env(v)
+
+    @field_validator("url_base", mode="after")
+    @classmethod
+    def _normalize_url_base(cls, v: str) -> str:
+        return _normalize_url_base(v)
+
+    @field_validator("trusted_proxies", mode="after")
+    @classmethod
+    def _validate_proxies(cls, v: list[str]) -> list[str]:
+        return _validate_networks(v)
+
+
+class OIDCConfig(_ConfigModel):
+    """OpenID Connect single sign-on (Authentik, Authelia, Keycloak, Pocket ID, ...)."""
+
+    enabled: bool = False
+    name: str = "SSO"
+    issuer: str | None = None
+    client_id: str | None = None
+    client_secret: SecretStr | None = None
+    scopes: list[str] = Field(default_factory=lambda: ["openid", "profile", "email"])
+    username_claim: str = "preferred_username"
+    groups_claim: str = "groups"
+    allowed_users: list[str] = Field(default_factory=list)
+    allowed_groups: list[str] = Field(default_factory=list)
+    auto_login: bool = False
+    disable_password_login: bool = False
+
+    @field_validator("issuer", mode="after")
+    @classmethod
+    def _validate_issuer(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        if not v.startswith(("https://", "http://")):
+            raise ValueError("issuer must be an http(s) URL")
+        return v.rstrip("/")
+
+    @model_validator(mode="after")
+    def _validate_enabled(self) -> OIDCConfig:
+        if self.enabled and (not self.issuer or not self.client_id):
+            raise ValueError("OIDC needs 'issuer' and 'client_id' when enabled")
+        if "openid" not in self.scopes:
+            self.scopes = ["openid", *self.scopes]
+        return self
+
+    @property
+    def discovery_url(self) -> str:
+        """Return the OpenID provider configuration document URL."""
+        issuer = self.issuer or ""
+        if issuer.endswith("/.well-known/openid-configuration"):
+            return issuer
+        return f"{issuer}/.well-known/openid-configuration"
+
+
+class AuthConfig(_ConfigModel):
+    """Authentication of the web UI and API."""
+
+    method: AuthMethod = AuthMethod.FORMS
+    local_bypass: bool = False
+    session_days: int = Field(default=30, ge=1, le=365)
+    external_header: str = "Remote-User"
+    oidc: OIDCConfig = Field(default_factory=OIDCConfig)
+
+    @field_validator("method", mode="before")
+    @classmethod
+    def _coerce_method(cls, v: object) -> object:
+        return v.lower() if isinstance(v, str) else v
 
 
 class WebhookTriggerConfig(TriggerConfig):
@@ -902,10 +988,12 @@ class Config(_ConfigModel):
     probe_workers: int = Field(default=DEFAULT_PROBE_WORKERS, ge=1, le=64)
     removal_guard: RemovalGuardConfig = Field(default_factory=RemovalGuardConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     media_servers: list[AnyMediaServerConfig] = Field(default_factory=list)
 
     _warnings: list[str] = PrivateAttr(default_factory=list)
+    _env_overrides: set[str] = PrivateAttr(default_factory=set)
 
     @field_validator("sidecar_extensions", mode="after")
     @classmethod
@@ -1020,9 +1108,15 @@ class Config(_ConfigModel):
         self.triggers = [
             t for t in self.triggers if not isinstance(t, WebhookTriggerConfig)
         ]
-        if not self.server.enabled:
-            self.server = ServerConfig(
-                enabled=True, host=hook.host, port=hook.port, api_key=hook.api_key
+        server = self.server
+        if server.port == DEFAULT_WEBHOOK_PORT and server.api_key is None:
+            self.server = server.model_copy(
+                update={
+                    "enabled": True,
+                    "host": hook.host,
+                    "port": hook.port,
+                    "api_key": hook.api_key,
+                }
             )
         self._warnings.append(
             "The 'webhook' trigger is deprecated; use the 'server' section "
@@ -1062,13 +1156,6 @@ class Config(_ConfigModel):
           directories must not be nested inside each other (otherwise the
           cleanup of one library would fight with the other).
         """
-        if self.output_path is None and any(
-            lib.output_path is None
-            and any(sym.output_path is None for sym in lib.symlink_libraries)
-            for lib in self.libraries
-        ):
-            return self  # reported by _validate_output_paths
-
         inputs = [(lib.name, lib.input_path) for lib in self.libraries]
         outputs: list[tuple[str, str, Path]] = []
         for lib in self.libraries:
@@ -1175,6 +1262,8 @@ def _apply_env_vars(
     yaml_data: dict[str, Any],
     config_file_name: str,
     field_name: str,
+    overrides: set[str],
+    path: str | None = None,
 ) -> dict[str, Any]:
     """Overlay environment variables onto ``yaml_data`` for ``model_cls``.
 
@@ -1190,11 +1279,14 @@ def _apply_env_vars(
         yaml_data: Values already loaded from the config file.
         config_file_name: File name used in the warning message.
         field_name: The name of the field in the parent config class.
+        overrides: Receives the dotted keys that were taken from the environment.
+        path: Dotted location of ``model_cls`` (defaults to ``field_name``).
 
     Returns:
         A new dict with env var values overlaid on top of yaml_data.
     """
     prefix: str = getattr(model_cls, "_env_prefix", field_name.upper())
+    path = field_name if path is None else path
     merged = dict(yaml_data)
     for name, field_info in model_cls.model_fields.items():
         if isinstance(field_info.annotation, type) and issubclass(
@@ -1202,7 +1294,12 @@ def _apply_env_vars(
         ):
             nested_yaml = merged.get(name) or {}
             merged[name] = _apply_env_vars(
-                field_info.annotation, nested_yaml, config_file_name, name
+                field_info.annotation,
+                nested_yaml,
+                config_file_name,
+                name,
+                overrides,
+                f"{path}.{name}",
             )
             continue
         env_var = f"{prefix}_{name}".upper() if prefix else name.upper()
@@ -1220,6 +1317,7 @@ def _apply_env_vars(
                     env_value,
                 )
             merged[name] = env_value
+            overrides.add(f"{path}.{name}")
     return merged
 
 
@@ -1242,25 +1340,41 @@ def _write_config_template(config_path: Path) -> None:
     )
 
 
-def load_config(
-    config_dir: Path,
-    config_file_name: str,
-    log_level: LogLevel | None = None,
-    log_dir: Path | str | None = None,
-    log_file_name: str | None = None,
-) -> Config:
-    """Load and validate configuration from all sources.
+class ConfigError(Exception):
+    """The configuration could not be read or is invalid.
 
-    Exits:
-        Calls sys.exit() with a human-readable error on validation failure.
-
-    Returns:
-        The validated Config singleton.
+    ``errors`` holds one ``{"loc": [...], "msg": "..."}`` entry per problem
+    so that API clients can attach messages to individual fields.
     """
-    global _config
 
-    config_path = config_dir / config_file_name
-    cli_values: dict[str, dict[str, Any]] = {}
+    def __init__(self, message: str, errors: list[dict[str, Any]] | None = None):
+        super().__init__(message)
+        self.message = message
+        self.errors = errors or [{"loc": [], "msg": message}]
+
+
+def read_config_file(config_path: Path) -> dict[str, Any]:
+    """Read *config_path* (creating it from the template if missing)."""
+    if not config_path.is_file():
+        _write_config_template(config_path)
+    try:
+        with config_path.open(encoding="utf-8") as config_file:
+            yaml_data = yaml.safe_load(config_file) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"Error parsing config file '{config_path}':\n{exc}") from exc
+    if not isinstance(yaml_data, dict):
+        raise ConfigError(
+            f"Error in config file '{config_path}': the top level must be a "
+            f"mapping of options, got {type(yaml_data).__name__}."
+        )
+    return yaml_data
+
+
+def cli_values(
+    log_level: LogLevel | None,
+    log_dir: Path | str | None,
+    log_file_name: str | None,
+) -> dict[str, dict[str, Any]]:
     logging_cli: dict[str, Any] = {}
     if log_level is not None:
         logging_cli[CONF_LOGGING_LEVEL] = log_level
@@ -1268,27 +1382,50 @@ def load_config(
         logging_cli[CONF_LOGGING_DIR] = log_dir
     if log_file_name is not None:
         logging_cli[CONF_LOGGING_FILE_NAME] = log_file_name
-    if logging_cli:
-        cli_values[CONF_LOGGING] = logging_cli
+    return {CONF_LOGGING: logging_cli} if logging_cli else {}
 
-    if not config_path.is_file():
-        _write_config_template(config_path)
 
-    try:
-        with config_path.open(encoding="utf-8") as config_file:
-            yaml_data = yaml.safe_load(config_file) or {}
-    except yaml.YAMLError as exc:
-        typer.echo(f"Error parsing config file '{config_path}':\n{exc}", err=True)
-        sys.exit(1)
-    if not isinstance(yaml_data, dict):
-        typer.echo(
-            f"Error in config file '{config_path}': the top level must be a "
-            f"mapping of options, got {type(yaml_data).__name__}.",
-            err=True,
-        )
-        sys.exit(1)
+def clean_loc(loc: tuple[int | str, ...], data: object) -> list[int | str]:
+    """Drop union discriminator tags from a pydantic error location.
 
+    ``("probers", 0, "sonarr", "url")`` becomes ``["probers", 0, "url"]`` so
+    the location matches the document the user edited.
+    """
+    cleaned: list[int | str] = []
+    node: Any = data
+    for part in loc:
+        if isinstance(node, dict) and part not in node and part == node.get("type"):
+            continue
+        cleaned.append(part)
+        if isinstance(node, dict):
+            node = node.get(part)
+        elif isinstance(node, list) and isinstance(part, int) and part < len(node):
+            node = node[part]
+        else:
+            node = None
+    return cleaned
+
+
+def clean_msg(msg: str) -> str:
+    for prefix in ("Value error, ", "Assertion failed, "):
+        msg = msg.removeprefix(prefix)
+    return msg[:1].upper() + msg[1:]
+
+
+def build_config(
+    yaml_data: dict[str, Any],
+    config_dir: Path,
+    config_file_name: str,
+    cli_values: dict[str, dict[str, Any]] | None = None,
+) -> Config:
+    """Validate *yaml_data* merged with environment variables and CLI values.
+
+    Raises:
+        ConfigError: if the data is invalid.
+    """
+    cli_values = cli_values or {}
     warnings: list[str] = []
+    overrides: set[str] = set()
     sub_configs: dict[str, Any] = {}
     for field_name, field_info in Config.model_fields.items():
         if not (
@@ -1298,12 +1435,10 @@ def load_config(
             continue
         yaml_sub = yaml_data.get(field_name) or {}
         if not isinstance(yaml_sub, dict):
-            typer.echo(
-                f"Error in config file '{config_path}': '{field_name}' must be a "
-                f"mapping of options.",
-                err=True,
+            raise ConfigError(
+                f"'{field_name}' must be a mapping of options.",
+                [{"loc": [field_name], "msg": "must be a mapping of options"}],
             )
-            sys.exit(1)
         yaml_excluded: frozenset[str] = getattr(
             field_info.annotation, "_yaml_excluded", frozenset()
         )
@@ -1314,10 +1449,21 @@ def load_config(
             )
         yaml_sub = {k: v for k, v in yaml_sub.items() if k not in yaml_excluded}
         sub_merged = _apply_env_vars(
-            field_info.annotation, yaml_sub, config_file_name, field_name
+            field_info.annotation, yaml_sub, config_file_name, field_name, overrides
         )
-        sub_merged.update(cli_values.get(field_name) or {})
+        cli_sub = cli_values.get(field_name) or {}
+        sub_merged.update(cli_sub)
+        overrides.update(f"{field_name}.{key}" for key in cli_sub)
         sub_configs[field_name] = sub_merged
+
+    server_raw = yaml_data.get("server") or {}
+    if "api_key" not in server_raw and (
+        os.environ.get(ENV_API_KEY) or os.environ.get(ENV_WEBHOOK_API_KEY)
+    ):
+        overrides.add("server.api_key")
+    notifications_raw = yaml_data.get("notifications") or {}
+    if not notifications_raw.get("urls") and os.environ.get(ENV_NOTIFY_URLS):
+        overrides.add("notifications.urls")
 
     reserved = {CONF_CONFIG_DIR, "config_file", CONF_DATABASE, *sub_configs}
     extra_fields: dict[str, Any] = {
@@ -1338,6 +1484,11 @@ def load_config(
             "type": DatabaseType.SQLITE,
             "dir": str(resolved_config_dir),
         }
+    elif not isinstance(database_raw, dict):
+        raise ConfigError(
+            "'database' must be a mapping of options.",
+            [{"loc": ["database"], "msg": "must be a mapping of options"}],
+        )
     else:
         db_raw = dict(database_raw)
         db_type = str(db_raw.get("type", DatabaseType.SQLITE))
@@ -1346,16 +1497,53 @@ def load_config(
         extra_fields[CONF_DATABASE] = db_raw
 
     try:
-        _config = Config(
+        config = Config(
             config_dir=config_dir,
             config_file=config_file_name,
             **sub_configs,
             **extra_fields,
         )
-        _config._warnings.extend(warnings)
     except ValidationError as exc:
-        typer.echo(f"Error validating config file '{config_path}':", err=True)
-        typer.echo(exc, err=True)
-        sys.exit(1)
+        raise ConfigError(
+            str(exc),
+            [
+                {"loc": clean_loc(err["loc"], yaml_data), "msg": clean_msg(err["msg"])}
+                for err in exc.errors(include_url=False, include_context=False)
+            ],
+        ) from exc
+    config._warnings.extend(warnings)
+    config._env_overrides |= overrides
+    return config
 
+
+def load_config(
+    config_dir: Path,
+    config_file_name: str,
+    log_level: LogLevel | None = None,
+    log_dir: Path | str | None = None,
+    log_file_name: str | None = None,
+) -> Config:
+    """Load and validate configuration from all sources.
+
+    Exits:
+        Calls sys.exit() with a human-readable error on validation failure.
+
+    Returns:
+        The validated Config singleton.
+    """
+    global _config
+
+    config_path = config_dir / config_file_name
+    try:
+        yaml_data = read_config_file(config_path)
+        _config = build_config(
+            yaml_data,
+            config_dir,
+            config_file_name,
+            cli_values(log_level, log_dir, log_file_name),
+        )
+    except ConfigError as exc:
+        typer.echo(f"Invalid configuration in '{config_path}':", err=True)
+        typer.echo(exc.message, err=True)
+        sys.exit(1)
     return _config

@@ -280,11 +280,21 @@ class PipelineFactory:
             for sym_lib in library.symlink_libraries
         ]
 
-    def for_scan(self, config: Config, library: LibraryConfig) -> Pipeline:
+    def for_scan(
+        self,
+        config: Config,
+        library: LibraryConfig,
+        *,
+        dry_run: bool | None = None,
+        force: bool | None = None,
+    ) -> Pipeline:
         """Build a pipeline for the ``scan`` command.
 
         Full pipeline: pre-filter → probe → post-filter → symlink → clean stale → persist.
+        ``dry_run``/``force`` override the factory defaults for this pipeline.
         """
+        dry_run = self._dry_run if dry_run is None else dry_run
+        force = self._force if force is None else force
         _LOGGER.debug("Building pipeline for 'scan' on library '%s'", library.name)
         prober_configs = (
             library.probers if library.probers is not None else config.probers
@@ -298,14 +308,14 @@ class PipelineFactory:
             probers=self._cached_probers(prober_configs),
             pre_probe_filters=self._build_pre_probe_filters(pre_filter_configs),
             symlink_libraries=self._resolve_symlink_libraries(config, library),
-            symlinks=SymlinkManager(dry_run=self._dry_run),
+            symlinks=SymlinkManager(dry_run=dry_run),
             state=self._state,
             sidecar_extensions=config.sidecar_extensions_for(library),
             ignore_patterns=tuple(config.ignore_patterns_for(library)),
             relative_symlinks=config.relative_symlinks_for(library),
             probe_workers=config.probe_workers,
             removal_guard=config.removal_guard.to_model(),
-            force=self._force,
+            force=force,
         )
 
     def for_watch(self, config: Config, library: LibraryConfig) -> Pipeline:

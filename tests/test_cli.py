@@ -1,8 +1,6 @@
 """Tests for CLI commands, watcher resilience and low-level helpers."""
 
-import asyncio
 import os
-import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -12,10 +10,9 @@ import yaml
 from typer.testing import CliRunner, Result
 
 from boomarr.__main__ import app
-from boomarr.models import AudioTrack, MediaInfo, ScanResult
+from boomarr.models import AudioTrack, MediaInfo
 from boomarr.probers.ffprobe import FFProbeProber
 from boomarr.symlinks import SymlinkManager, link_target
-from boomarr.watcher import Watcher
 
 runner = CliRunner()
 
@@ -145,86 +142,6 @@ class TestHealthcheck:
         os.utime(hb, (old, old))
         monkeypatch.setenv("HEARTBEAT_FILE", str(hb))
         assert runner.invoke(app, ["healthcheck"]).exit_code == 1
-
-
-class TestWatcherResilience:
-    def test_failing_scan_does_not_stop_watcher(self) -> None:
-        calls = 0
-
-        def scan(cancel: threading.Event) -> ScanResult:
-            nonlocal calls
-            calls += 1
-            if calls == 1:
-                raise RuntimeError("disk on fire")
-            return ScanResult()
-
-        watcher = Watcher(triggers=[], scan_callback=scan, debounce_seconds=0.01)
-
-        async def main() -> None:
-            from boomarr.models import ScanEvent
-
-            for _ in range(2):
-                watcher._queue.put_nowait(ScanEvent("t", time.monotonic()))
-                await asyncio.sleep(0)
-
-            async def feed() -> None:
-                await asyncio.sleep(0.2)
-                watcher._queue.put_nowait(ScanEvent("t", time.monotonic()))
-                await asyncio.sleep(0.3)
-                watcher._request_shutdown()
-
-            _task = asyncio.create_task(feed())  # noqa: RUF006
-            await watcher._run()
-
-        asyncio.run(main())
-        assert calls == 2
-
-    def test_shutdown_cancels_running_scan(self) -> None:
-        seen: list[bool] = []
-
-        def scan(cancel: threading.Event) -> ScanResult:
-            cancel.wait(timeout=5)
-            seen.append(cancel.is_set())
-            return ScanResult()
-
-        watcher = Watcher(triggers=[], scan_callback=scan, debounce_seconds=0.01)
-
-        async def main() -> None:
-            from boomarr.models import ScanEvent
-
-            watcher._queue.put_nowait(ScanEvent("t", time.monotonic()))
-
-            async def stop() -> None:
-                await asyncio.sleep(0.3)
-                watcher._request_shutdown()
-
-            _task = asyncio.create_task(stop())  # noqa: RUF006
-            started = time.monotonic()
-            await watcher._run()
-            assert time.monotonic() - started < 3
-
-        asyncio.run(main())
-        assert seen == [True]
-
-    def test_heartbeat_written(self, tmp_path: Path) -> None:
-        hb = tmp_path / "sub" / "hb"
-        watcher = Watcher(
-            triggers=[],
-            scan_callback=lambda cancel: ScanResult(),
-            heartbeat_file=hb,
-            heartbeat_interval=0.05,
-        )
-
-        async def main() -> None:
-            async def stop() -> None:
-                await asyncio.sleep(0.2)
-                watcher._request_shutdown()
-
-            _task = asyncio.create_task(stop())  # noqa: RUF006
-            await watcher._run()
-
-        asyncio.run(main())
-        assert hb.exists()
 
 
 class TestSymlinkManagerDetails:

@@ -4,8 +4,16 @@ Contains value objects representing media metadata, audio track information,
 and scan operation results used throughout the application.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+MAX_RECORDED_CHANGES = 500
+"""Maximum number of individual link changes kept per scan (for the UI)."""
+
+ProgressCallback = Callable[[dict[str, Any]], None]
+"""Receives progress updates such as ``{"library": ..., "phase": ...}``."""
 
 
 @dataclass(frozen=True)
@@ -56,6 +64,8 @@ class ScanEvent:
 
     source: str
     timestamp: float
+    dry_run: bool = False
+    force: bool = False
 
 
 @dataclass
@@ -72,6 +82,18 @@ class ScanResult:
     blocked: int = 0
     links: dict[str, int] = field(default_factory=dict)
     changed_outputs: set[str] = field(default_factory=set)
+    changes: list[dict[str, str]] = field(default_factory=list)
+
+    def record_change(
+        self, action: str, path: Path, target: Path | None = None
+    ) -> None:
+        """Remember an individual link change (capped at ``MAX_RECORDED_CHANGES``)."""
+        if len(self.changes) >= MAX_RECORDED_CHANGES:
+            return
+        change = {"action": action, "path": str(path)}
+        if target is not None:
+            change["target"] = str(target)
+        self.changes.append(change)
 
     @property
     def total(self) -> int:
@@ -97,6 +119,8 @@ class ScanResult:
         self.blocked += other.blocked
         self.links.update(other.links)
         self.changed_outputs |= other.changed_outputs
+        room = MAX_RECORDED_CHANGES - len(self.changes)
+        self.changes.extend(other.changes[: max(room, 0)])
         return self
 
 

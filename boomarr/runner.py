@@ -16,7 +16,7 @@ from typing import Any, Protocol
 from boomarr.config import Config
 from boomarr.const import VERSION
 from boomarr.metrics import METRICS
-from boomarr.models import ScanResult
+from boomarr.models import ProgressCallback, ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.processor import LibraryProcessor
 
@@ -34,6 +34,9 @@ class ScanReport:
     finished_at: float
     error: str | None = None
     dry_run: bool = False
+    force: bool = False
+    source: str = "cli"
+    cancelled: bool = False
 
     @property
     def changed_outputs(self) -> list[str]:
@@ -44,17 +47,19 @@ class ScanReport:
 
     def as_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
+            "started_at": self.finished_at - self.duration,
             "finished_at": self.finished_at,
             "duration_seconds": round(self.duration, 3),
             "error": self.error,
             "dry_run": self.dry_run,
+            "force": self.force,
+            "source": self.source,
+            "cancelled": self.cancelled,
         }
         if self.result is not None:
-            data["result"] = {
-                k: v
-                for k, v in dataclasses.asdict(self.result).items()
-                if k != "changed_outputs"
-            }
+            result = dataclasses.asdict(self.result)
+            result["changed_outputs"] = sorted(self.result.changed_outputs)
+            data["result"] = result
         return data
 
 
@@ -84,15 +89,30 @@ class ScanRunner:
         self._last: ScanReport | None = None
         self._running = False
 
-    def scan_libraries(self, cancel: threading.Event) -> ScanResult:
+    @property
+    def config(self) -> Config:
+        return self._config
+
+    def scan_libraries(
+        self,
+        cancel: threading.Event,
+        *,
+        dry_run: bool | None = None,
+        force: bool | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> ScanResult:
         """Process every configured library, isolating per-library failures."""
         total = ScanResult()
         for library in self._config.libraries:
             if cancel.is_set():
                 break
             try:
-                pipeline = self._factory.for_scan(self._config, library)
-                processor = LibraryProcessor(pipeline, cancel=cancel)
+                pipeline = self._factory.for_scan(
+                    self._config, library, dry_run=dry_run, force=force
+                )
+                processor = LibraryProcessor(
+                    pipeline, cancel=cancel, on_progress=on_progress
+                )
                 result = processor.process_library(library)
             except Exception:
                 _LOGGER.exception("Processing library '%s' failed", library.name)
@@ -101,15 +121,29 @@ class ScanRunner:
             total.merge(result)
         return total
 
-    def run(self, cancel: threading.Event) -> ScanResult:
-        """Run a full scan, record metrics and invoke the post-scan hooks."""
+    def run(
+        self,
+        cancel: threading.Event,
+        *,
+        dry_run: bool | None = None,
+        force: bool = False,
+        source: str = "cli",
+        on_progress: ProgressCallback | None = None,
+    ) -> ScanResult:
+        """Run a full scan, record metrics and history and invoke the hooks."""
+        dry_run = self._dry_run if dry_run is None else dry_run
         with self._lock:
             self._running = True
         started = time.monotonic()
         result: ScanResult | None = None
         error: str | None = None
         try:
-            result = self.scan_libraries(cancel)
+            result = self.scan_libraries(
+                cancel,
+                dry_run=dry_run,
+                force=force or None,
+                on_progress=on_progress,
+            )
             return result
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
@@ -121,14 +155,17 @@ class ScanRunner:
                 duration=duration,
                 finished_at=time.time(),
                 error=error,
-                dry_run=self._dry_run,
+                dry_run=dry_run,
+                force=force,
+                source=source,
+                cancelled=cancel.is_set(),
             )
             with self._lock:
                 self._last = report
                 self._running = False
-            METRICS.record_scan(result, duration, self._cache_entries())
-            if not cancel.is_set():
-                self._persist(report)
+            self._record(report)
+            if not cancel.is_set() and not dry_run:
+                METRICS.record_scan(result, duration, self._cache_entries())
                 self._run_hooks(report)
 
     def status(self) -> dict[str, Any]:
@@ -142,14 +179,26 @@ class ScanRunner:
             "last_scan": last.as_dict() if last else None,
         }
 
-    def _persist(self, report: ScanReport) -> None:
-        """Remember the last real scan so ``boomarr status`` can show it."""
-        if self._dry_run:
-            return
+    @property
+    def last_report(self) -> ScanReport | None:
+        with self._lock:
+            return self._last
+
+    def _record(self, report: ScanReport) -> None:
+        """Store the report in the history and, for real scans, as last scan."""
+        record = report.as_dict()
+        state = self._factory.state
         try:
-            self._factory.state.set_meta(LAST_SCAN_KEY, report.as_dict())
-        except Exception:  # pragma: no cover - status info must never break scans
-            _LOGGER.exception("Could not store the last scan report")
+            state.add_scan(record)
+            if not report.dry_run and not report.cancelled:
+                slim = {**record}
+                if isinstance(slim.get("result"), dict):
+                    slim["result"] = {
+                        k: v for k, v in slim["result"].items() if k != "changes"
+                    }
+                state.set_meta(LAST_SCAN_KEY, slim)
+        except Exception:  # pragma: no cover - history must never break scans
+            _LOGGER.exception("Could not store the scan report")
 
     def _cache_entries(self) -> int | None:
         try:
@@ -161,5 +210,9 @@ class ScanRunner:
         for hook in self._hooks:
             try:
                 hook.after_scan(report)
+            except OSError as exc:  # unreachable server, DNS, timeouts
+                _LOGGER.warning(
+                    "Post-scan hook %s failed: %s", type(hook).__name__, exc
+                )
             except Exception:
                 _LOGGER.exception("Post-scan hook %s failed", type(hook).__name__)
