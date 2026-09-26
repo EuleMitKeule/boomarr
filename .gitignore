@@ -210,3 +210,8 @@ config/
 config-docker/
 tests/output/
 *.log.*
+
+# Web UI
+frontend/node_modules/
+boomarr/web/dist/
+frontend/*.tsbuildinfo
