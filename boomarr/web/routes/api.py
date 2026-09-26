@@ -37,6 +37,13 @@ if TYPE_CHECKING:  # pragma: no cover
     from boomarr.daemon import Daemon
 
 _LOGGER = logging.getLogger(__name__)
+_LAST_SCAN_DEFAULTS: dict[str, Any] = {
+    "source": "unknown",
+    "dry_run": False,
+    "force": False,
+    "cancelled": False,
+    "error": None,
+}
 _SSE_KEEPALIVE = 15.0
 
 router = APIRouter(tags=["api"], dependencies=[Depends(require_user)])
@@ -107,7 +114,13 @@ async def dashboard(request: Request) -> dict[str, Any]:
     library_status = await asyncio.to_thread(
         collect_status, daemon.config, daemon.state
     )
-    return {**daemon.snapshot(), **library_status}
+    snapshot = daemon.snapshot()
+    # The in-memory report is the freshest; after a restart fall back to the
+    # stored one, which may come from an older version without all fields.
+    last_scan = snapshot["last_scan"] or library_status["last_scan"]
+    if last_scan is not None:
+        last_scan = {**_LAST_SCAN_DEFAULTS, **last_scan}
+    return {**library_status, **snapshot, "last_scan": last_scan}
 
 
 @router.get("/languages")

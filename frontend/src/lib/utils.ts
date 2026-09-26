@@ -51,13 +51,15 @@ export function plural(count: number, word: string, suffix = "s"): string {
 }
 
 /** Last path component (for compact display of long paths). */
-export function basename(path: string): string {
+export function basename(path: string | null | undefined): string {
+  if (!path) return "";
   const parts = path.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? path;
 }
 
 /** Human readable trigger source ("ui:admin" → "Manual (admin)"). */
-export function sourceLabel(source: string): string {
+export function sourceLabel(source: string | null | undefined): string {
+  if (!source) return "Unknown";
   return source
     .split(", ")
     .map((part) => {
