@@ -1,0 +1,1774 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Symlink-based audio language filter for Plex, Jellyfin & Emby">
+      
+      
+      
+        <link rel="canonical" href="https://eulemitkeule.github.io/boomarr/configuration/">
+      
+      
+        <link rel="prev" href="../web-ui/">
+      
+      
+        <link rel="next" href="../media-servers/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/icon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Configuration - Boomarr</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="red">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Boomarr" class="md-header__button md-logo" aria-label="Boomarr" data-md-component="logo">
+      
+  <img src="../assets/icon.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Boomarr
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="red"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="red"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/EuleMitKeule/boomarr" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    EuleMitKeule/boomarr
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Boomarr" class="md-nav__button md-logo" aria-label="Boomarr" data-md-component="logo">
+      
+  <img src="../assets/icon.svg" alt="logo">
+
+    </a>
+    Boomarr
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/EuleMitKeule/boomarr" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    EuleMitKeule/boomarr
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI & security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#minimal-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#top-level-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-level options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Libraries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#symlink-libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symlink libraries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Filters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#audio_language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        audio_language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#video_codec-audio_codec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        video_codec / audio_codec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        audio_channels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#invert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        invert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#file_extension-pre-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        file_extension (pre-probe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#triggers-watch-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Triggers (watch mode)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Triggers (watch mode)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#schedule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        schedule
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#http-server-webhooks-metrics-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP server: webhooks, metrics, status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#removal-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removal guard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#media-server-refresh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Media server refresh
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#probers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Probers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Probers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sonarr-and-radarr-probers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sonarr and Radarr probers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#database-probe-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database (probe cache)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables-and-cli-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables and CLI options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-directory-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output directory naming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../media-servers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Media servers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How it works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#minimal-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#top-level-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-level options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Libraries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#symlink-libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symlink libraries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Filters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#audio_language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        audio_language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#video_codec-audio_codec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        video_codec / audio_codec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        audio_channels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#invert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        invert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#file_extension-pre-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        file_extension (pre-probe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#triggers-watch-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Triggers (watch mode)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Triggers (watch mode)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#schedule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        schedule
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#http-server-webhooks-metrics-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP server: webhooks, metrics, status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#removal-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removal guard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#media-server-refresh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Media server refresh
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#probers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Probers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Probers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sonarr-and-radarr-probers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sonarr and Radarr probers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#database-probe-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database (probe cache)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables-and-cli-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables and CLI options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-directory-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output directory naming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="configuration-reference">Configuration reference<a class="headerlink" href="#configuration-reference" title="Permanent link">&para;</a></h1>
+<p>Boomarr is configured with a single YAML file, <code>boomarr.yml</code>, inside the
+config directory (<code>/config</code> in Docker, <code>./config</code> otherwise). If the file
+does not exist, a commented template is created on first start. Every option
+on this page can also be changed in the <a href="../web-ui/">web UI</a>, which edits the
+same file.</p>
+<p>Unknown or misspelled options never prevent startup, but are logged as a
+warning (e.g. <code>Unknown config option 'libraries[0].symlink_libraries[0].filters[0].langauges'</code>).</p>
+<ul>
+<li><a href="#minimal-example">Minimal example</a></li>
+<li><a href="#top-level-options">Top-level options</a></li>
+<li><a href="#libraries">Libraries</a></li>
+<li><a href="#symlink-libraries">Symlink libraries</a></li>
+<li><a href="#filters">Filters</a></li>
+<li><a href="#triggers-watch-mode">Triggers (watch mode)</a></li>
+<li><a href="#http-server-webhooks-metrics-status">HTTP server: webhooks, metrics, status</a></li>
+<li><a href="#authentication">Authentication</a></li>
+<li><a href="#removal-guard">Removal guard</a></li>
+<li><a href="#notifications">Notifications</a></li>
+<li><a href="#media-server-refresh">Media server refresh</a></li>
+<li><a href="#probers">Probers</a></li>
+<li><a href="#database-probe-cache">Database (probe cache)</a></li>
+<li><a href="#logging">Logging</a></li>
+<li><a href="#environment-variables-and-cli-options">Environment variables and CLI options</a></li>
+<li><a href="#output-directory-naming">Output directory naming</a></li>
+<li><a href="#validation-rules">Validation rules</a></li>
+</ul>
+<h2 id="minimal-example">Minimal example<a class="headerlink" href="#minimal-example" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="nt">output_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/media/filtered</span>
+
+<span class="nt">libraries</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Movies</span>
+<span class="w">    </span><span class="nt">input_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/media/movies</span>
+<span class="w">    </span><span class="nt">symlink_libraries</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">filters</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio_language</span>
+<span class="w">            </span><span class="nt">languages</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">deu</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<p>This creates <code>/media/filtered/movies-deu</code>, mirroring the folder structure of
+<code>/media/movies</code> but containing only (symlinks to) files with a German audio
+track.</p>
+<h2 id="top-level-options">Top-level options<a class="headerlink" href="#top-level-options" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>output_path</code></td>
+<td>–</td>
+<td>Base directory for all symlink libraries. Required unless every library (or every symlink library) sets its own <code>output_path</code>.</td>
+</tr>
+<tr>
+<td><code>libraries</code></td>
+<td><code>[]</code></td>
+<td>List of <a href="#libraries">libraries</a>.</td>
+</tr>
+<tr>
+<td><code>triggers</code></td>
+<td><code>[schedule]</code></td>
+<td><a href="#triggers-watch-mode">Triggers</a> for <code>boomarr watch</code>.</td>
+</tr>
+<tr>
+<td><code>sidecar_extensions</code></td>
+<td><code>[.srt, .ass, .ssa, .sub, .idx, .vtt, .sup, .smi]</code></td>
+<td>External files that are linked together with a matching media file when their name starts with the media file's name (<code>Movie.mkv</code> → <code>Movie.de.srt</code>, <code>Movie.en.forced.ass</code>). Set <code>[]</code> to disable.</td>
+</tr>
+<tr>
+<td><code>ignore_patterns</code></td>
+<td>see below</td>
+<td><a href="https://docs.python.org/3/library/fnmatch.html">fnmatch</a> patterns of file and directory <strong>names</strong> that are skipped while scanning.</td>
+</tr>
+<tr>
+<td><code>relative_symlinks</code></td>
+<td><code>false</code></td>
+<td>Create relative symlinks (<code>../../movies/Film/Film.mkv</code>) instead of absolute ones. See <a href="../media-servers/#path-mapping">media servers</a>.</td>
+</tr>
+<tr>
+<td><code>removal_guard</code></td>
+<td>50 % / 20</td>
+<td><a href="#removal-guard">Protection against mass removals</a>.</td>
+</tr>
+<tr>
+<td><code>server</code></td>
+<td>disabled</td>
+<td><a href="#http-server-webhooks-metrics-status">HTTP server</a> for webhooks, metrics and status.</td>
+</tr>
+<tr>
+<td><code>notifications</code></td>
+<td>none</td>
+<td><a href="#notifications">Apprise notifications</a>.</td>
+</tr>
+<tr>
+<td><code>media_servers</code></td>
+<td><code>[]</code></td>
+<td><a href="#media-server-refresh">Plex/Jellyfin/Emby refresh</a> after changes.</td>
+</tr>
+<tr>
+<td><code>probe_workers</code></td>
+<td><code>4</code></td>
+<td>Number of files probed in parallel (1–64). Only new or changed files are probed. Lower it for slow spinning disks, raise it for SSD/NVMe.</td>
+</tr>
+<tr>
+<td><code>probers</code></td>
+<td><code>[ffprobe]</code></td>
+<td><a href="#probers">Probers</a> used to read audio tracks.</td>
+</tr>
+<tr>
+<td><code>pre_probe_filters</code></td>
+<td><code>[file_extension]</code></td>
+<td>Cheap filters applied before probing.</td>
+</tr>
+<tr>
+<td><code>database</code></td>
+<td><code>sqlite</code></td>
+<td><a href="#database-probe-cache">Probe cache</a>.</td>
+</tr>
+<tr>
+<td><code>watch.debounce</code></td>
+<td><code>2.0</code></td>
+<td>Seconds to wait for more trigger events before a scan starts.</td>
+</tr>
+<tr>
+<td><code>general.tz</code></td>
+<td><code>UTC</code></td>
+<td>Timezone for log timestamps (also <code>TZ</code>).</td>
+</tr>
+<tr>
+<td><code>logging</code></td>
+<td></td>
+<td>See <a href="#logging">logging</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>Default <code>ignore_patterns</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">ignore_patterns</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">".*"</span><span class="w">                         </span><span class="c1"># hidden files/dirs, macOS "._" files, .Trash-*</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"@eaDir"</span><span class="w">                     </span><span class="c1"># Synology thumbnails</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"#recycle"</span><span class="w">                   </span><span class="c1"># Synology recycle bin</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"#snapshot"</span><span class="w">                  </span><span class="c1"># Synology snapshots</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"$RECYCLE.BIN"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"System</span><span class="nv"> </span><span class="s">Volume</span><span class="nv"> </span><span class="s">Information"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"lost+found"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Plex</span><span class="nv"> </span><span class="s">Versions"</span><span class="w">              </span><span class="c1"># Plex optimized versions</span>
+</code></pre></div>
+<p>Setting <code>ignore_patterns</code> replaces the list; copy the defaults if you only
+want to add a pattern.</p>
+<h2 id="libraries">Libraries<a class="headerlink" href="#libraries" title="Permanent link">&para;</a></h2>
+<p>A library is a source directory that is scanned recursively.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">libraries</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Movies</span><span class="w">                  </span><span class="c1"># required, unique, used for folder names</span>
+<span class="w">    </span><span class="nt">input_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/media/movies</span><span class="w">     </span><span class="c1"># required, must be mounted read-only</span>
+<span class="w">    </span><span class="nt">output_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/media/filtered</span><span class="w">  </span><span class="c1"># optional, overrides the global output_path</span>
+<span class="w">    </span><span class="nt">symlink_libraries</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">...</span><span class="p p-Indicator">]</span><span class="w">      </span><span class="c1"># required, at least one</span>
+
+<span class="w">    </span><span class="c1"># Optional per-library overrides of the global options:</span>
+<span class="w">    </span><span class="nt">probers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">ffprobe</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">pre_probe_filters</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">file_extension</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">sidecar_extensions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">.srt</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">ignore_patterns</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">".*"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"Extras"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">relative_symlinks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<h2 id="symlink-libraries">Symlink libraries<a class="headerlink" href="#symlink-libraries" title="Permanent link">&para;</a></h2>
+<p>Each symlink library is one output folder with its own filters. A file is
+linked if it passes <strong>all</strong> filters of the symlink library.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">symlink_libraries</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># Automatic name: &lt;output_path&gt;/&lt;library-name-slug&gt;-&lt;filter suffixes&gt;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">filters</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio_language</span>
+<span class="w">        </span><span class="nt">languages</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">deu</span><span class="p p-Indicator">]</span>
+
+<span class="w">  </span><span class="c1"># Fixed folder name inside the library's output path</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">English</span>
+<span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio_language</span>
+<span class="w">        </span><span class="nt">languages</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">eng</span><span class="p p-Indicator">]</span>
+
+<span class="w">  </span><span class="c1"># Fully custom location</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">output_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/media/kids</span>
+<span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio_language</span>
+<span class="w">        </span><span class="nt">languages</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">deu</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<h2 id="filters">Filters<a class="headerlink" href="#filters" title="Permanent link">&para;</a></h2>
+<h3 id="audio_language"><code>audio_language</code><a class="headerlink" href="#audio_language" title="Permanent link">&para;</a></h3>
+<p>Matches files by the languages of their audio tracks.</p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio_language</span>
+<span class="w">  </span><span class="nt">languages</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">deu</span><span class="w">                       </span><span class="c1"># shorthand for {code: deu}</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">code</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eng</span>
+<span class="w">      </span><span class="nt">aliases</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">und</span><span class="p p-Indicator">]</span><span class="w">            </span><span class="c1"># tracks tagged "und" (undetermined) count as English</span>
+<span class="w">  </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">any</span><span class="w">                     </span><span class="c1"># any (default) | all</span>
+<span class="w">  </span><span class="nt">suffix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">german-english</span><span class="w">        </span><span class="c1"># optional, overrides the automatic folder suffix</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>languages</code></td>
+<td>–</td>
+<td>At least one language. Plain strings or <code>{code, aliases}</code>.</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td><code>any</code></td>
+<td><code>any</code>: at least one configured language is present. <code>all</code>: every configured language (or one of its aliases) is present, e.g. for "original + German dub" libraries.</td>
+</tr>
+<tr>
+<td><code>suffix</code></td>
+<td>joined codes</td>
+<td>Folder suffix used for automatic output naming.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Language codes are normalised.</strong> Matroska files store ISO 639-2/B codes
+(<code>ger</code>, <code>fre</code>, <code>dut</code>), other containers often use ISO 639-2/T (<code>deu</code>, <code>fra</code>,
+<code>nld</code>), ISO 639-1 (<code>de</code>) or IETF tags (<code>de-DE</code>). Boomarr treats all of these
+as the same language, both in your config and in the files, so <code>deu</code>, <code>ger</code>,
+<code>de</code> and <code>de-DE</code> are interchangeable.</p>
+<p>Tracks without a language tag are reported as <code>und</code>. Add <code>und</code> as an alias if
+your untagged files are in a known language.</p>
+<h3 id="resolution"><code>resolution</code><a class="headerlink" href="#resolution" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resolution</span>
+<span class="w">  </span><span class="nt">min_height</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2160</span><span class="w">      </span><span class="c1"># or "4k", "uhd", "1080p", "fhd", "720p", "hd", "sd"</span>
+<span class="w">  </span><span class="nt">max_height</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2160</span><span class="w">      </span><span class="c1"># optional upper bound</span>
+</code></pre></div>
+<p>The resolution is compared as its 16:9 equivalent, so cropped "scope"
+releases (1920×800) count as 1080p. A tolerance of 5 % applies. Automatic
+suffix: <code>2160p-plus</code>, <code>max-720p</code> or <code>720p-1080p</code>.</p>
+<h3 id="video_codec-audio_codec"><code>video_codec</code> / <code>audio_codec</code><a class="headerlink" href="#video_codec-audio_codec" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">video_codec</span>
+<span class="w">  </span><span class="nt">codecs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">hevc</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">av1</span><span class="p p-Indicator">]</span><span class="w">           </span><span class="c1"># h265/x265 = hevc, avc/x264 = h264</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio_codec</span>
+<span class="w">  </span><span class="nt">codecs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">truehd</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">eac3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">dts</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># e-ac-3 = eac3, ac-3 = ac3</span>
+</code></pre></div>
+<p>A file matches if at least one video (resp. audio) track uses one of the
+codecs. Suffix: the sorted codec names.</p>
+<h3 id="audio_channels"><code>audio_channels</code><a class="headerlink" href="#audio_channels" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio_channels</span>
+<span class="w">  </span><span class="nt">min_channels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6</span><span class="w">               </span><span class="c1"># 5.1 or more</span>
+</code></pre></div>
+<h3 id="invert"><code>invert</code><a class="headerlink" href="#invert" title="Permanent link">&para;</a></h3>
+<p>Every filter accepts <code>invert: true</code> to negate it, e.g. "everything that has
+no English audio track":</p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio_language</span>
+<span class="w">  </span><span class="nt">languages</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">eng</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">invert</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">                  </span><span class="c1"># automatic suffix: not-eng</span>
+</code></pre></div>
+<p>Filters of a symlink library are combined with AND, so for example
+"German 4K with surround sound" is:</p>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">German UHD</span>
+<span class="w">  </span><span class="nt">filters</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">audio_language</span><span class="p p-Indicator">,</span><span class="nt"> languages</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">deu</span><span class="p p-Indicator">]}</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">resolution</span><span class="p p-Indicator">,</span><span class="nt"> min_height</span><span class="p">:</span><span class="w"> </span><span class="nv">4k</span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">audio_channels</span><span class="p p-Indicator">,</span><span class="nt"> min_channels</span><span class="p">:</span><span class="w"> </span><span class="nv">6</span><span class="p p-Indicator">}</span>
+</code></pre></div>
+<h3 id="file_extension-pre-probe"><code>file_extension</code> (pre-probe)<a class="headerlink" href="#file_extension-pre-probe" title="Permanent link">&para;</a></h3>
+<p>Only files with these extensions are probed. Case and leading dot do not
+matter.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">pre_probe_filters</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">file_extension</span>
+<span class="w">    </span><span class="nt">extensions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">mkv</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">mp4</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">avi</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">m4v</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">ts</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">wmv</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">flv</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">mov</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">webm</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># default</span>
+</code></pre></div>
+<h2 id="triggers-watch-mode">Triggers (watch mode)<a class="headerlink" href="#triggers-watch-mode" title="Permanent link">&para;</a></h2>
+<p><code>boomarr watch</code> runs until stopped and scans whenever a trigger fires. All
+triggers share one queue; events arriving within <code>watch.debounce</code> seconds
+are collapsed into one scan. Unchanged files are served from the probe
+cache, so frequent scans are cheap.</p>
+<h3 id="schedule"><code>schedule</code><a class="headerlink" href="#schedule" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nt">triggers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">schedule</span>
+<span class="w">    </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span><span class="w">        </span><span class="c1"># seconds between scans (default 600)</span>
+<span class="w">    </span><span class="nt">run_on_start</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># scan immediately on startup (default true)</span>
+</code></pre></div>
+<h2 id="http-server-webhooks-metrics-status">HTTP server: webhooks, metrics, status<a class="headerlink" href="#http-server-webhooks-metrics-status" title="Permanent link">&para;</a></h2>
+<p><code>boomarr watch</code> runs a web server for the <a href="../web-ui/">web UI</a>, the REST
+API, webhooks and metrics:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">server</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">          </span><span class="c1"># default</span>
+<span class="w">  </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span><span class="w">          </span><span class="c1"># default</span>
+<span class="w">  </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">9797</span><span class="w">             </span><span class="c1"># default</span>
+<span class="w">  </span><span class="nt">url_base</span><span class="p">:</span><span class="w"> </span><span class="s">""</span><span class="w">           </span><span class="c1"># e.g. /boomarr behind a reverse proxy</span>
+<span class="w">  </span><span class="nt">trusted_proxies</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w">    </span><span class="c1"># proxies whose X-Forwarded-* headers are trusted</span>
+<span class="w">  </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">change-me</span><span class="w">     </span><span class="c1"># optional; generated on first start otherwise</span>
+<span class="w">  </span><span class="nt">metrics_auth</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">    </span><span class="c1"># require the API key for /metrics too</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Auth</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /health</code></td>
+<td>no</td>
+<td>Liveness check, returns <code>{"status": "ok"}</code>.</td>
+</tr>
+<tr>
+<td><code>GET /metrics</code></td>
+<td>if <code>metrics_auth</code></td>
+<td><a href="https://prometheus.io/">Prometheus</a> metrics.</td>
+</tr>
+<tr>
+<td><code>GET /api/v1/status</code></td>
+<td>yes</td>
+<td>Last scan result as JSON.</td>
+</tr>
+<tr>
+<td><code>POST /api/v1/scan</code></td>
+<td>yes</td>
+<td>Queue a full scan.</td>
+</tr>
+<tr>
+<td><code>POST /api/v1/webhook/&lt;name&gt;</code></td>
+<td>yes</td>
+<td>Same, <code>&lt;name&gt;</code> (e.g. <code>sonarr</code>) is only used for logging.</td>
+</tr>
+</tbody>
+</table>
+<p>The API key can be sent as <code>X-Api-Key</code> header, <code>?apikey=</code> query parameter,
+<code>Authorization: Bearer &lt;key&gt;</code>, or as the <strong>password</strong> of HTTP basic auth.
+The latter is what Sonarr/Radarr offer:</p>
+<blockquote>
+<p>Sonarr/Radarr → Settings → Connect → <strong>+</strong> → Webhook
+- URL: <code>http://boomarr:9797/api/v1/webhook/sonarr</code>
+- Method: <code>POST</code>
+- Password: your API key (username can be anything)
+- Triggers: <em>On File Import</em>, <em>On File Upgrade</em>, <em>On Rename</em>, <em>On Delete</em></p>
+</blockquote>
+<p>The API key is generated on first start and shown in the web UI
+(Settings → Security). Requests from signed-in browsers work as well, and
+with <code>auth.method: none</code> or <code>auth.local_bypass</code> no key is needed.</p>
+<p>Metrics include <code>boomarr_scans_total{status}</code>, <code>boomarr_scan_duration_seconds</code>,
+<code>boomarr_last_scan_timestamp_seconds</code>, <code>boomarr_links{output}</code>,
+<code>boomarr_links_created_total</code>, <code>boomarr_links_removed_total</code>,
+<code>boomarr_files_probed_total</code>, <code>boomarr_errors_total</code>,
+<code>boomarr_removal_guard_blocked_total</code>, <code>boomarr_cache_entries</code> and
+<code>boomarr_build_info</code>. A useful alert:
+<code>time() - boomarr_last_scan_timestamp_seconds &gt; 3600</code>.</p>
+<p>The older <code>triggers: [{type: webhook, ...}]</code> form still works and is turned
+into a <code>server</code> section (a deprecation warning is logged).</p>
+<h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="nt">auth</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">forms</span><span class="w">            </span><span class="c1"># forms (login page) | external (reverse proxy) | none</span>
+<span class="w">  </span><span class="nt">local_bypass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">  </span><span class="nt">session_days</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span>
+<span class="w">  </span><span class="nt">external_header</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Remote-User</span>
+<span class="w">  </span><span class="nt">oidc</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">issuer</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://auth.example.com/application/o/boomarr/</span>
+<span class="w">    </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">boomarr</span>
+<span class="w">    </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">change-me</span>
+</code></pre></div>
+<p>See <a href="../web-ui/#authentication">Web UI &amp; security</a> for all options, single
+sign-on and reverse proxy setups.</p>
+<h2 id="removal-guard">Removal guard<a class="headerlink" href="#removal-guard" title="Permanent link">&para;</a></h2>
+<p>Mass removals are almost always an accident (a share mounted empty, a
+wrong path, a filter typo). A scan therefore refuses to remove symlinks from
+an output directory when it would remove <strong>more than <code>min_count</code> links and
+more than <code>max_percent</code> of them</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">removal_guard</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">max_percent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span><span class="w">        </span><span class="c1"># default; 100 disables the guard</span>
+<span class="w">  </span><span class="nt">min_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span><span class="w">          </span><span class="c1"># default; small changes are always allowed</span>
+</code></pre></div>
+<p>The scan logs an error, counts the output as <code>blocked</code> (metric
+<code>boomarr_removal_guard_blocked_total</code>, notification) and leaves the links
+alone; new links are still created. If the removals are intended, e.g.
+after changing filters, run once:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>boomarr<span class="w"> </span>boomarr<span class="w"> </span>scan<span class="w"> </span>--force
+</code></pre></div>
+<h2 id="notifications">Notifications<a class="headerlink" href="#notifications" title="Permanent link">&para;</a></h2>
+<p>Boomarr sends notifications through <a href="https://github.com/caronc/apprise/wiki">Apprise</a>,
+which supports Telegram, Discord, Slack, Matrix, ntfy, Gotify, Pushover,
+e-mail and ~100 more services.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">notifications</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">urls</span><span class="p">:</span><span class="w">                  </span><span class="c1"># or BOOMARR_NOTIFY_URLS (whitespace separated)</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tgram://bottoken/ChatID</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ntfys://ntfy.sh/my-boomarr</span>
+<span class="w">  </span><span class="nt">on_errors</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">        </span><span class="c1"># default: scan failed or files could not be probed</span>
+<span class="w">  </span><span class="nt">on_blocked</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">       </span><span class="c1"># default: the removal guard blocked a removal</span>
+<span class="w">  </span><span class="nt">on_changes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">      </span><span class="c1"># links were created or removed</span>
+</code></pre></div>
+<h2 id="media-server-refresh">Media server refresh<a class="headerlink" href="#media-server-refresh" title="Permanent link">&para;</a></h2>
+<p>After a scan changed an output directory, Boomarr can tell your media server
+to rescan exactly that folder instead of waiting for its schedule:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">media_servers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">plex</span>
+<span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://plex:32400</span>
+<span class="w">    </span><span class="nt">token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-plex-token</span><span class="w">            </span><span class="c1"># https://support.plex.tv/articles/204059436</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">jellyfin</span><span class="w">                    </span><span class="c1"># or: emby</span>
+<span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://jellyfin:8096</span>
+<span class="w">    </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-api-key</span><span class="w">             </span><span class="c1"># Dashboard → API Keys</span>
+<span class="w">    </span><span class="c1"># Only needed if the media server sees the output under another path:</span>
+<span class="w">    </span><span class="nt">path_mappings</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">local</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/filtered</span><span class="w">         </span><span class="c1"># path inside Boomarr</span>
+<span class="w">        </span><span class="nt">remote</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/media/filtered</span><span class="w">       </span><span class="c1"># same folder inside the media server</span>
+</code></pre></div>
+<ul>
+<li><strong>Plex:</strong> every library section whose folder contains (or is inside) a
+  changed output directory gets a partial scan of that folder.</li>
+<li><strong>Jellyfin/Emby:</strong> the changed folders are reported via
+  <code>/Library/Media/Updated</code>, which triggers a targeted scan.</li>
+</ul>
+<p>Failures are logged and never affect the scan.</p>
+<h2 id="probers">Probers<a class="headerlink" href="#probers" title="Permanent link">&para;</a></h2>
+<p>Probers read the audio tracks of a file. They form a fallback chain: the
+first prober that returns a result wins.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">probers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ffprobe</span>
+<span class="w">    </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ffprobe</span><span class="w">        </span><span class="c1"># executable name or absolute path</span>
+<span class="w">    </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span><span class="w">          </span><span class="c1"># seconds per file</span>
+</code></pre></div>
+<p>Boomarr checks at startup that ffprobe is available and exits with a clear
+error otherwise. The Docker image ships a static ffprobe build.</p>
+<h3 id="sonarr-and-radarr-probers">Sonarr and Radarr probers<a class="headerlink" href="#sonarr-and-radarr-probers" title="Permanent link">&para;</a></h3>
+<p>Sonarr and Radarr already know the audio languages of every file they
+imported. Asking them is much faster than probing, especially on network
+storage:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">libraries</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Movies</span>
+<span class="w">    </span><span class="nt">input_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/media/movies</span>
+<span class="w">    </span><span class="nt">probers</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">radarr</span>
+<span class="w">        </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://radarr:7878</span>
+<span class="w">        </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-radarr-api-key</span>
+<span class="w">        </span><span class="nt">path_mappings</span><span class="p">:</span><span class="w">                </span><span class="c1"># only if Radarr uses other paths</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">local</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/media/movies</span>
+<span class="w">            </span><span class="nt">remote</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/movies</span>
+<span class="w">        </span><span class="nt">cache_ttl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span><span class="w">                </span><span class="c1"># seconds the library index is reused</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ffprobe</span><span class="w">                       </span><span class="c1"># fallback for files Radarr doesn't know</span>
+<span class="w">    </span><span class="nt">symlink_libraries</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">...</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<p>Boomarr fetches the whole library in one request (Sonarr: one per series),
+caches it for <code>cache_ttl</code> seconds and maps paths with <code>path_mappings</code>. Files
+Sonarr/Radarr do not know, or whose languages are empty, go to the next
+prober. If the server is unreachable, Boomarr logs a warning and falls back
+as well.</p>
+<h2 id="database-probe-cache">Database (probe cache)<a class="headerlink" href="#database-probe-cache" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="nt">database</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sqlite</span><span class="w">           </span><span class="c1"># default</span>
+<span class="w">  </span><span class="nt">dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/config</span><span class="w">           </span><span class="c1"># default: the config directory</span>
+<span class="w">  </span><span class="nt">file_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">boomarr.db</span>
+</code></pre></div>
+<p>or</p>
+<div class="highlight"><pre><span></span><code><span class="nt">database</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">memory</span><span class="w">           </span><span class="c1"># nothing persisted, every restart probes everything</span>
+</code></pre></div>
+<p>The cache stores the audio tracks of every probed file keyed by path, size
+and modification time. <strong>Filters are never cached</strong>: changing languages,
+adding a symlink library or deleting links by hand takes effect on the next
+scan without probing a single file again. Entries of deleted files are
+pruned automatically. The cache can be deleted at any time; the next scan
+simply re-probes all files.</p>
+<h2 id="logging">Logging<a class="headerlink" href="#logging" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">info</span><span class="w">                </span><span class="c1"># debug | info | warning | error | critical</span>
+<span class="w">  </span><span class="nt">color</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">                </span><span class="c1"># only applied when stderr is a terminal</span>
+<span class="w">  </span><span class="nt">format</span><span class="p">:</span><span class="w"> </span><span class="s">"%(asctime)s</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">%(levelname)-8s</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">%(name)s:</span><span class="nv"> </span><span class="s">%(message)s"</span>
+<span class="w">  </span><span class="nt">date_format</span><span class="p">:</span><span class="w"> </span><span class="s">"%Y-%m-%d</span><span class="nv"> </span><span class="s">%H:%M:%S"</span>
+<span class="w">  </span><span class="nt">file_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">boomarr.log</span><span class="w">     </span><span class="c1"># empty string disables file logging</span>
+<span class="w">  </span><span class="nt">rotation</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_bytes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10485760</span>
+<span class="w">    </span><span class="nt">backup_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">    </span><span class="nt">rotate_on_start</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<p>The log directory can only be set via <code>LOG_DIR</code> / <code>--log-dir</code> (default
+<code>&lt;config&gt;/logs</code> in Docker); set it to an empty string to disable file logging.</p>
+<h2 id="environment-variables-and-cli-options">Environment variables and CLI options<a class="headerlink" href="#environment-variables-and-cli-options" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env var</th>
+<th>CLI option</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CONFIG_DIR</code></td>
+<td><code>--config-dir</code></td>
+<td>Config directory (<code>/config</code> in Docker).</td>
+</tr>
+<tr>
+<td><code>CONFIG_FILE_NAME</code></td>
+<td><code>--config-file-name</code></td>
+<td>Config file name (<code>boomarr.yml</code>).</td>
+</tr>
+<tr>
+<td><code>LOG_LEVEL</code></td>
+<td><code>--log-level</code></td>
+<td>Overrides <code>logging.level</code>.</td>
+</tr>
+<tr>
+<td><code>LOG_DIR</code></td>
+<td><code>--log-dir</code></td>
+<td>Log directory, empty disables file logging.</td>
+</tr>
+<tr>
+<td><code>LOG_FILE_NAME</code></td>
+<td><code>--log-file-name</code></td>
+<td>Log file name.</td>
+</tr>
+<tr>
+<td><code>LOG_COLOR</code>, <code>LOG_FORMAT</code>, <code>LOG_ROTATION_ENABLED</code>, …</td>
+<td></td>
+<td>Any <code>logging.*</code> option as <code>LOG_&lt;OPTION&gt;</code> / <code>LOG_ROTATION_&lt;OPTION&gt;</code>.</td>
+</tr>
+<tr>
+<td><code>TZ</code></td>
+<td></td>
+<td>Timezone for timestamps.</td>
+</tr>
+<tr>
+<td><code>BOOMARR_API_KEY</code></td>
+<td></td>
+<td>API key for the HTTP server when <code>server.api_key</code> is not set (<code>WEBHOOK_API_KEY</code> also works).</td>
+</tr>
+<tr>
+<td><code>BOOMARR_USERNAME</code>, <code>BOOMARR_PASSWORD</code></td>
+<td></td>
+<td>Create/update the web UI admin account on start instead of the setup page.</td>
+</tr>
+<tr>
+<td><code>BOOMARR_SECRET_KEY</code></td>
+<td></td>
+<td>Key for signing sessions (generated and stored in <code>auth.json</code> otherwise).</td>
+</tr>
+<tr>
+<td><code>BOOMARR_NOTIFY_URLS</code></td>
+<td></td>
+<td>Whitespace separated Apprise URLs when <code>notifications.urls</code> is not set.</td>
+</tr>
+<tr>
+<td><code>HEARTBEAT_FILE</code></td>
+<td></td>
+<td>Heartbeat file used by <code>boomarr healthcheck</code>.</td>
+</tr>
+<tr>
+<td><code>PUID</code>, <code>PGID</code>, <code>UMASK</code></td>
+<td></td>
+<td>Docker only: user, group and umask Boomarr runs as.</td>
+</tr>
+<tr>
+<td><code>DANGEROUS_SKIP_READONLY_CHECK</code></td>
+<td><code>--dangerous-skip-readonly-check</code></td>
+<td>Disable the read-only source check. Development only.</td>
+</tr>
+</tbody>
+</table>
+<p>Environment variables win over the config file (a warning is logged when
+both are set); CLI options win over both.</p>
+<h2 id="output-directory-naming">Output directory naming<a class="headerlink" href="#output-directory-naming" title="Permanent link">&para;</a></h2>
+<p>For every symlink library the output directory is, in order of precedence:</p>
+<ol>
+<li>its own <code>output_path</code>,</li>
+<li><code>&lt;base&gt;/&lt;name&gt;</code> when <code>name</code> is set,</li>
+<li><code>&lt;base&gt;/&lt;library name, lower-case, spaces → dashes&gt;-&lt;filter suffixes&gt;</code>,</li>
+</ol>
+<p>where <code>&lt;base&gt;</code> is the library's <code>output_path</code> or the global <code>output_path</code>.
+The automatic suffix of an <code>audio_language</code> filter is its configured codes,
+lower-cased, sorted and joined with <code>-</code> (<code>[eng, DEU]</code> → <code>deu-eng</code>); see the
+individual filters for theirs. Inverted filters are prefixed with <code>not-</code>.</p>
+<h2 id="validation-rules">Validation rules<a class="headerlink" href="#validation-rules" title="Permanent link">&para;</a></h2>
+<p>Boomarr refuses to start with a configuration that could damage your data or
+produce conflicting results:</p>
+<ul>
+<li>Output directories must not be inside, equal to, or contain <strong>any</strong>
+  library's input directory.</li>
+<li>Every symlink library needs its own output directory, and output
+  directories must not be nested inside each other.</li>
+<li>Library names, symlink library names and suffixes must be usable as a
+  single folder name (no <code>/</code>, <code>\</code>, <code>.</code> or <code>..</code>).</li>
+<li>Library names must be unique; every library needs at least one symlink
+  library and every symlink library at least one filter.</li>
+<li>Input directories must be <strong>read-only</strong> for Boomarr (checked at runtime).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.sections", "navigation.top", "content.code.copy", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
