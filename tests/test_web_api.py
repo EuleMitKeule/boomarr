@@ -59,6 +59,27 @@ class TestSystem:
         assert data["libraries"][0]["name"] == "Movies"
         assert "cache" in data
 
+    def test_dashboard_last_scan_from_older_version(
+        self, admin: TestClient, web_daemon: Daemon
+    ) -> None:
+        # Boomarr 1.x stored the last scan without source/dry_run/...
+        web_daemon.state.set_meta(
+            "last_scan", {"finished_at": 1.0, "duration_seconds": 2}
+        )
+        last = admin.get("/api/v1/dashboard").json()["last_scan"]
+        assert last["source"] == "unknown"
+        assert last["dry_run"] is False
+        assert last["finished_at"] == 1.0
+
+    def test_dashboard_prefers_current_report(
+        self, admin: TestClient, web_daemon: Daemon
+    ) -> None:
+        import threading
+
+        web_daemon.state.set_meta("last_scan", {"finished_at": 1.0, "source": "old"})
+        web_daemon.runner.run(threading.Event(), source="fresh")
+        assert admin.get("/api/v1/dashboard").json()["last_scan"]["source"] == "fresh"
+
     def test_languages(self, admin: TestClient) -> None:
         languages = admin.get("/api/v1/languages").json()
         assert {"code": "deu", "name": "German", "code1": "de"} in languages

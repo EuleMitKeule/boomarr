@@ -74,6 +74,8 @@ describe("formatting", () => {
     expect(sourceLabel("cli")).toBe("Command line");
     expect(sourceLabel("ui")).toBe("Manual");
     expect(sourceLabel("other")).toBe("other");
+    expect(sourceLabel(undefined)).toBe("Unknown");
+    expect(basename(undefined)).toBe("");
   });
 });
 
