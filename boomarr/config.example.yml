@@ -22,13 +22,30 @@ output_path: /media/filtered
 #     interval: 600          # seconds between rescans (default: 600)
 #     run_on_start: true     # scan immediately on startup (default: true)
 
-# Built-in HTTP server (watch mode): Sonarr/Radarr webhooks, Prometheus
-# /metrics and /api/v1/status. Webhook URL for Sonarr/Radarr
-# (Settings -> Connect -> Webhook): http://boomarr:9797/api/v1/webhook/sonarr
+# Web UI, REST API, Sonarr/Radarr webhooks and Prometheus /metrics
+# (watch mode). Everything in this file can also be edited in the web UI.
+# Webhook URL for Sonarr/Radarr (Settings -> Connect -> Webhook):
+# http://boomarr:9797/api/v1/webhook/sonarr (API key: web UI -> Settings -> Security)
 # server:
 #   enabled: true
 #   port: 9797
-#   api_key: change-me       # or BOOMARR_API_KEY; X-Api-Key header, ?apikey= or basic-auth password
+#   url_base: ""             # e.g. /boomarr behind a reverse proxy
+#   trusted_proxies: []      # e.g. [172.16.0.0/12] to trust X-Forwarded-* headers
+#   api_key: change-me       # optional fixed key (or BOOMARR_API_KEY); generated otherwise
+
+# Web UI authentication.
+# auth:
+#   method: forms            # forms (login page) | external (reverse proxy) | none
+#   local_bypass: false      # no login from private networks
+#   session_days: 30
+#   external_header: Remote-User
+#   oidc:                    # single sign-on (Authentik, Authelia, Keycloak, ...)
+#     enabled: false
+#     name: SSO
+#     issuer: https://auth.example.com/application/o/boomarr/
+#     client_id: boomarr
+#     client_secret: change-me
+#     allowed_groups: []
 
 # Refuse to remove more than 50 % of an output folder's links at once (when
 # more than 20 would go). Run `boomarr scan --force` for intended removals.

@@ -9,7 +9,15 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# -- Boomarr configuration, rendered to /config/boomarr.yml.
+# -- Who owns /config/boomarr.yml:
+#   `ui`        - the web UI edits the file on the config volume; `config` is
+#                 only written on the very first start (default)
+#   `configMap` - `config`/`existingConfigMap` is mounted read-only (GitOps);
+#                 the web UI shows the settings but cannot change them
+configMode: ui
+
+# -- Boomarr configuration (initial file in `ui` mode, the whole file in
+# `configMap` mode).
 # See https://github.com/EuleMitKeule/boomarr/blob/master/docs/configuration.md
 config:
   output_path: /media/filtered
@@ -29,18 +37,43 @@ env:
   TZ: UTC
   LOG_LEVEL: info
 
-# -- Built-in HTTP server: Sonarr/Radarr webhooks, Prometheus /metrics and
-# /api/v1/status. Enables `server` in the config and exposes a Service.
+# -- Web UI, REST API, Sonarr/Radarr webhooks and Prometheus /metrics
 server:
-  enabled: false
+  enabled: true
   port: 9797
   # -- Require the API key for /metrics as well
   metricsAuth: false
-  # -- API key (stored in a Secret). Prefer `existingSecret` in production.
+  # -- Fixed API key (stored in a Secret). Leave empty to use the key
+  # generated on first start (shown in Settings → Security).
   apiKey: ""
   # -- Existing Secret containing the API key
   existingSecret: ""
   existingSecretKey: api-key
+
+# -- Web UI login. Without credentials, the first visitor creates the admin
+# account (a setup token from the log is required from outside the LAN).
+auth:
+  # -- Admin account from a Secret (BOOMARR_USERNAME / BOOMARR_PASSWORD)
+  username: ""
+  password: ""
+  # -- Existing Secret with the keys below instead of username/password
+  existingSecret: ""
+  usernameKey: username
+  passwordKey: password
+
+# -- Ingress for the web UI
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: boomarr.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: boomarr-tls
+  #    hosts: [boomarr.example.com]
 
 # -- Prometheus Operator ServiceMonitor (requires server.enabled)
 serviceMonitor:

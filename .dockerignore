@@ -12,6 +12,12 @@ build/
 
 # Tests
 tests/
+coverage.xml
+.coverage
+
+# Web UI: dependencies and output are produced inside the build
+frontend/node_modules/
+boomarr/web/dist/
 
 # IDE
 .vscode/

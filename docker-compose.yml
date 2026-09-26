@@ -9,7 +9,10 @@ services:
       UMASK: "022"
       TZ: Etc/UTC
       LOG_LEVEL: info
-      # WEBHOOK_API_KEY: change-me   # used by a `type: webhook` trigger without api_key
+      # Optional: create the web UI admin account from the environment
+      # instead of the setup page (e.g. from a Docker secret or .env file).
+      # BOOMARR_USERNAME: admin
+      # BOOMARR_PASSWORD: change-me
     volumes:
       # Config file (boomarr.yml), probe cache and logs.
       - ./config:/config
@@ -20,7 +23,7 @@ services:
       # Output: the filtered libraries are created here. Mount it into your
       # media server at the same path as well.
       - /path/to/media/filtered:/media/filtered
-    # ports:
-    #   - "9797:9797"   # only needed for the webhook trigger
+    ports:
+      - "9797:9797"   # web UI, REST API and Sonarr/Radarr webhooks
     security_opt:
       - no-new-privileges:true

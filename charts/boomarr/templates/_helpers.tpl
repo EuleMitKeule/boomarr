@@ -38,9 +38,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/* Render the Boomarr config, enabling the HTTP server when requested. */}}
 {{- define "boomarr.config" -}}
 {{- $cfg := deepCopy .Values.config }}
-{{- if .Values.server.enabled }}
-{{- $server := dict "enabled" true "port" .Values.server.port "metrics_auth" .Values.server.metricsAuth }}
+{{- $server := dict "enabled" .Values.server.enabled "port" .Values.server.port "metrics_auth" .Values.server.metricsAuth }}
 {{- $_ := set $cfg "server" (merge $server (default (dict) $cfg.server)) }}
-{{- end }}
 {{- toYaml $cfg }}
+{{- end }}
+
+{{- define "boomarr.authSecretName" -}}
+{{- if .Values.auth.existingSecret }}{{ .Values.auth.existingSecret }}{{ else }}{{ include "boomarr.fullname" . }}{{ end }}
 {{- end }}
