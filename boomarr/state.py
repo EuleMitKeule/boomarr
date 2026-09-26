@@ -21,6 +21,17 @@ from boomarr.models import AudioTrack, MediaInfo, VideoTrack
 _LOGGER = logging.getLogger(__name__)
 
 SCHEMA_VERSION: int = 3
+SCAN_HISTORY_LIMIT = 500
+"""Number of scans kept in the history."""
+
+
+def _without_changes(record: dict[str, Any]) -> dict[str, Any]:
+    result = record.get("result")
+    if not isinstance(result, dict) or "changes" not in result:
+        return record
+    slim = {k: v for k, v in result.items() if k != "changes"}
+    slim["changes_count"] = len(result["changes"])
+    return {**record, "result": slim}
 
 
 def _encode_tracks(info: MediaInfo) -> str:
@@ -100,6 +111,20 @@ class StateStore(abc.ABC):
     def get_meta(self, key: str) -> dict[str, Any] | None:
         """Return a document stored with :meth:`set_meta`, or None."""
 
+    @abc.abstractmethod
+    def add_scan(self, record: dict[str, Any]) -> int:
+        """Append a scan report to the history and return its id."""
+
+    @abc.abstractmethod
+    def list_scans(
+        self, limit: int = 50, offset: int = 0
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return the newest scans (without change lists) and the total count."""
+
+    @abc.abstractmethod
+    def get_scan(self, scan_id: int) -> dict[str, Any] | None:
+        """Return one scan including its change list."""
+
     def close(self) -> None:  # noqa: B027 - optional hook
         """Release resources held by the store."""
 
@@ -110,6 +135,8 @@ class InMemoryStateStore(StateStore):
     def __init__(self) -> None:
         self._entries: dict[str, tuple[MediaInfo, float]] = {}
         self._meta: dict[str, dict[str, Any]] = {}
+        self._scans: list[dict[str, Any]] = []
+        self._next_scan_id = 1
         self._lock = threading.Lock()
         self._hits: int = 0
         self._misses: int = 0
@@ -139,6 +166,27 @@ class InMemoryStateStore(StateStore):
     def get_meta(self, key: str) -> dict[str, Any] | None:
         with self._lock:
             return self._meta.get(key)
+
+    def add_scan(self, record: dict[str, Any]) -> int:
+        with self._lock:
+            scan_id = self._next_scan_id
+            self._next_scan_id += 1
+            stored = json.loads(json.dumps({**record, "id": scan_id}, default=str))
+            self._scans.append(stored)
+            del self._scans[:-SCAN_HISTORY_LIMIT]
+            return scan_id
+
+    def list_scans(
+        self, limit: int = 50, offset: int = 0
+    ) -> tuple[list[dict[str, Any]], int]:
+        with self._lock:
+            newest = list(reversed(self._scans))
+            page = [_without_changes(r) for r in newest[offset : offset + limit]]
+            return page, len(newest)
+
+    def get_scan(self, scan_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            return next((r for r in self._scans if r["id"] == scan_id), None)
 
     def remove(self, file: Path) -> None:
         with self._lock:
@@ -192,6 +240,11 @@ CREATE TABLE IF NOT EXISTS meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS scan_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    finished_at REAL    NOT NULL,
+    record      TEXT    NOT NULL
+);
 """
 
 _UPSERT_SQL = """
@@ -232,8 +285,12 @@ class SQLiteStateStore(StateStore):
     @staticmethod
     def _connect(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.DatabaseError:
+            conn.close()  # e.g. not a database: don't leak the handle
+            raise
         return conn
 
     def _open_or_reset(self, db_path: Path) -> sqlite3.Connection:
@@ -388,6 +445,51 @@ class SQLiteStateStore(StateStore):
         except ValueError:
             return None
         return value if isinstance(value, dict) else None
+
+    def add_scan(self, record: dict[str, Any]) -> int:
+        with self._lock:
+            cursor = self._conn.execute(
+                "INSERT INTO scan_history (finished_at, record) VALUES (?, ?)",
+                (
+                    float(record.get("finished_at") or time.time()),
+                    json.dumps(record, default=str),
+                ),
+            )
+            scan_id = int(cursor.lastrowid or 0)
+            self._conn.execute(
+                "DELETE FROM scan_history WHERE id <= ?",
+                (scan_id - SCAN_HISTORY_LIMIT,),
+            )
+            self._conn.commit()
+        return scan_id
+
+    def _decode_scan(self, scan_id: int, raw: str) -> dict[str, Any] | None:
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            return None
+        return {**record, "id": scan_id} if isinstance(record, dict) else None
+
+    def list_scans(
+        self, limit: int = 50, offset: int = 0
+    ) -> tuple[list[dict[str, Any]], int]:
+        with self._lock:
+            total = int(
+                self._conn.execute("SELECT COUNT(*) FROM scan_history").fetchone()[0]
+            )
+            rows = self._conn.execute(
+                "SELECT id, record FROM scan_history ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        records = [self._decode_scan(scan_id, raw) for scan_id, raw in rows]
+        return [_without_changes(r) for r in records if r is not None], total
+
+    def get_scan(self, scan_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, record FROM scan_history WHERE id = ?", (scan_id,)
+            ).fetchone()
+        return None if row is None else self._decode_scan(row[0], row[1])
 
     def reset(self) -> None:
         """Delete all cached entries."""

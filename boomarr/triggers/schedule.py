@@ -24,6 +24,8 @@ class ScheduleTrigger(TriggerSource):
         self._interval = interval
         self._run_on_start = run_on_start
         self._task: asyncio.Task[None] | None = None
+        self.next_fire_at: float | None = None
+        """Unix time of the next scheduled scan (None while stopped)."""
 
     async def start(self, queue: asyncio.Queue[ScanEvent]) -> None:
         """Spawn the periodic loop as a background task."""
@@ -41,6 +43,7 @@ class ScheduleTrigger(TriggerSource):
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+            self.next_fire_at = None
             _LOGGER.debug("Schedule trigger stopped")
 
     async def _loop(self, queue: asyncio.Queue[ScanEvent]) -> None:
@@ -48,6 +51,7 @@ class ScheduleTrigger(TriggerSource):
         if self._run_on_start:
             await self._emit(queue)
         while True:
+            self.next_fire_at = time.time() + self._interval
             await asyncio.sleep(self._interval)
             await self._emit(queue)
 

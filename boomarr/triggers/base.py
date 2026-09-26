@@ -11,7 +11,7 @@ class TriggerSource(abc.ABC):
 
     Subclasses implement the scheduling/detection logic (e.g. periodic timer,
     filesystem watcher, webhook listener) and push ``ScanEvent`` instances
-    into the shared queue provided by the ``Watcher``.
+    into the shared queue provided by the :class:`~boomarr.daemon.Daemon`.
     """
 
     @abc.abstractmethod

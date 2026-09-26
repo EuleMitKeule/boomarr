@@ -10,6 +10,8 @@ keywords = ["plex", "jellyfin", "emby", "symlink", "audio", "language", "ffprobe
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
@@ -22,12 +24,18 @@ classifiers = [
 version = "0.0.0-dev"
 dependencies = [
     "apprise>=1.9",
+    "argon2-cffi>=25.1",
+    "fastapi>=0.118",
+    "httpx>=0.28",
+    "itsdangerous>=2.2",
+    "joserfc>=1.3",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=13",
     "typer>=0.24.1",
     "tzdata>=2025.2",
+    "uvicorn>=0.37",
 ]
 
 [project.urls]
@@ -43,10 +51,18 @@ boomarr = "boomarr.__main__:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+# The web UI is built from frontend/ (npm run build) and git-ignored.
+artifacts = ["boomarr/web/dist/**"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["frontend/node_modules", "docs", "charts", "contrib", "tests/fixtures/media"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
+    "respx>=0.22",
     "ruff>=0.15.9",
     "ty>=0.0.84",
     "types-pyyaml>=6.0.12.20250915",
@@ -75,11 +91,24 @@ error-on-warning = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
-filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
+filterwarnings = [
+    "error::pytest.PytestUnraisableExceptionWarning",
+    "error::ResourceWarning",
+    # starlette's TestClient suggests the httpx2 fork; httpx works fine
+    "ignore:Using `httpx` with `starlette.testclient`",
+]
 
 [tool.coverage.run]
 source = ["boomarr"]
 branch = true
 
 [tool.coverage.report]
-exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "@abc.abstractmethod"]
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abc.abstractmethod",
+    "if __name__ == .__main__.:",
+]

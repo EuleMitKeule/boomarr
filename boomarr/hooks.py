@@ -29,11 +29,10 @@ def build_hooks(config: Config) -> list[PostScanHook]:
     if config.notifications.urls:
         hooks.append(NotificationHook(config.notifications))
     for server in config.media_servers:
-        match server:
-            case PlexConfig():
-                hooks.append(PlexRefreshHook(server))
-            case JellyfinConfig() | EmbyConfig():
-                hooks.append(JellyfinRefreshHook(server))
+        if isinstance(server, PlexConfig):
+            hooks.append(PlexRefreshHook(server))
+        else:  # Jellyfin and Emby share the same API
+            hooks.append(JellyfinRefreshHook(server))
     return hooks
 
 

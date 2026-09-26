@@ -830,3 +830,22 @@ def language_from_name_or_code(value: str) -> str | None:
     if len(code) in (2, 3) and code.isalpha():
         return code
     return None
+
+
+def known_languages() -> list[dict[str, str]]:
+    """All languages as ``{"code", "name", "code1"}`` sorted by name.
+
+    One entry per ISO 639-2/T code; the name is the first English name of
+    the code in the table (e.g. ``deu`` → ``german``), title-cased.
+    """
+    two_letter = {v: k for k, v in ISO_639_1_TO_2T.items()}
+    names: dict[str, str] = {}
+    for name, code in ISO_639_NAMES.items():
+        names.setdefault(code, name)
+    return sorted(
+        (
+            {"code": code, "name": name.title(), "code1": two_letter.get(code, "")}
+            for code, name in names.items()
+        ),
+        key=lambda entry: entry["name"],
+    )

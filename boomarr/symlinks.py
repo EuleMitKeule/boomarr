@@ -134,7 +134,7 @@ class SymlinkManager:
         Returns the number of removed symlinks.
         """
         plan = self.plan_removals(output_dir, expected, owned_root, preserve)
-        return self.apply_removals(output_dir, plan.removals)
+        return len(self.apply_removals(output_dir, plan.removals))
 
     def plan_removals(
         self,
@@ -160,9 +160,14 @@ class SymlinkManager:
             plan.removals.append((link, "stale" if broken else "unwanted"))
         return plan
 
-    def apply_removals(self, output_dir: Path, removals: list[tuple[Path, str]]) -> int:
-        """Remove the planned symlinks and prune directories left empty."""
-        removed = sum(1 for link, reason in removals if self._remove(link, reason))
+    def apply_removals(
+        self, output_dir: Path, removals: list[tuple[Path, str]]
+    ) -> list[Path]:
+        """Remove the planned symlinks and prune directories left empty.
+
+        Returns the symlinks that were (or, in dry-run mode, would be) removed.
+        """
+        removed = [link for link, reason in removals if self._remove(link, reason)]
         self.prune_empty_dirs(output_dir)
         return removed
 

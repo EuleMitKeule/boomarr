@@ -1,6 +1,5 @@
 """Tests for metrics, the scan runner, notifications and media server hooks."""
 
-import asyncio
 import json
 import threading
 import time
@@ -32,10 +31,9 @@ from boomarr.hooks import (
     build_hooks,
 )
 from boomarr.metrics import Metrics
-from boomarr.models import ScanEvent, ScanResult
+from boomarr.models import ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.runner import ScanReport, ScanRunner
-from boomarr.server import HttpServer
 
 
 def _report(**kwargs: Any) -> ScanReport:
@@ -267,70 +265,3 @@ class TestScanRunner:
         cancel.set()
         ScanRunner(self._config(), PipelineFactory(), hooks=[hook]).run(cancel)
         hook.after_scan.assert_not_called()
-
-
-def _http(port: int, request: bytes) -> tuple[int, bytes]:
-    async def main() -> tuple[int, bytes]:
-        reader, writer = await asyncio.open_connection("127.0.0.1", port)
-        writer.write(request)
-        await writer.drain()
-        data = await reader.read()
-        writer.close()
-        head, _, body = data.partition(b"\r\n\r\n")
-        return int(head.split(b" ")[1]), body
-
-    return asyncio.run(main())
-
-
-class TestServerRoutes:
-    def _run(
-        self, server: HttpServer, requests: list[bytes]
-    ) -> list[tuple[int, bytes]]:
-        results: list[tuple[int, bytes]] = []
-
-        async def main() -> None:
-            queue: asyncio.Queue[ScanEvent] = asyncio.Queue()
-            await server.start(queue)
-            loop = asyncio.get_running_loop()
-            try:
-                for raw in requests:
-                    results.append(
-                        await loop.run_in_executor(None, _http, server.port, raw)
-                    )
-            finally:
-                await server.stop()
-
-        asyncio.run(main())
-        return results
-
-    def test_metrics_and_status(self) -> None:
-        server = HttpServer(
-            host="127.0.0.1",
-            port=0,
-            api_key="k",
-            status_provider=lambda: {"running": False},
-        )
-        (metrics, status_ok, status_denied) = self._run(
-            server,
-            [
-                b"GET /metrics HTTP/1.1\r\n\r\n",
-                b"GET /api/v1/status HTTP/1.1\r\nX-Api-Key: k\r\n\r\n",
-                b"GET /api/v1/status HTTP/1.1\r\n\r\n",
-            ],
-        )
-        assert metrics[0] == 200
-        assert b"boomarr_build_info" in metrics[1]
-        assert status_ok == (200, b'{"running": false}')
-        assert status_denied[0] == 401
-
-    def test_metrics_auth(self) -> None:
-        server = HttpServer(host="127.0.0.1", port=0, api_key="k", metrics_auth=True)
-        denied, allowed = self._run(
-            server,
-            [
-                b"GET /metrics HTTP/1.1\r\n\r\n",
-                b"GET /metrics?apikey=k HTTP/1.1\r\n\r\n",
-            ],
-        )
-        assert denied[0] == 401
-        assert allowed[0] == 200

@@ -9,7 +9,7 @@ import logging
 import sys
 import time
 import zoneinfo
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
@@ -52,7 +52,11 @@ class _ColoredFormatter(logging.Formatter):
         return f"{color}{message}{_ANSI_RESET}" if color else message
 
 
-def setup_logging(config: LoggingConfig, tz: str = DEFAULT_TZ) -> None:
+def setup_logging(
+    config: LoggingConfig,
+    tz: str = DEFAULT_TZ,
+    extra_handlers: Sequence[logging.Handler] = (),
+) -> None:
     """Configure the ``boomarr`` root logger from *config*.
 
     Sets up a console handler (stderr) and, optionally, a file handler
@@ -62,6 +66,8 @@ def setup_logging(config: LoggingConfig, tz: str = DEFAULT_TZ) -> None:
     Args:
         config: The validated :class:`~boomarr.config.LoggingConfig` to apply.
         tz: IANA timezone name used for log timestamps.
+        extra_handlers: Additional handlers (e.g. the web UI's log buffer)
+            that must survive reconfiguration.
     """
     root = logging.getLogger(APP_NAME)
     root.setLevel(config.level.value)
@@ -105,3 +111,6 @@ def setup_logging(config: LoggingConfig, tz: str = DEFAULT_TZ) -> None:
             file_handler = logging.FileHandler(config.log_file, encoding="utf-8")
         file_handler.setFormatter(plain_formatter)
         root.addHandler(file_handler)
+
+    for handler in extra_handlers:
+        root.addHandler(handler)

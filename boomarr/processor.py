@@ -21,7 +21,7 @@ from pathlib import Path
 
 from boomarr.config import LibraryConfig
 from boomarr.filters.base import PostProbeFilter
-from boomarr.models import MediaInfo, ScanResult
+from boomarr.models import MediaInfo, ProgressCallback, ScanResult
 from boomarr.pipeline import Pipeline
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,10 +41,22 @@ class LibraryProcessor:
     """
 
     def __init__(
-        self, pipeline: Pipeline, *, cancel: threading.Event | None = None
+        self,
+        pipeline: Pipeline,
+        *,
+        cancel: threading.Event | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> None:
         self._pipeline = pipeline
         self._cancel = cancel or threading.Event()
+        self._on_progress = on_progress
+        self._library = ""
+
+    def _progress(self, phase: str, done: int = 0, total: int = 0) -> None:
+        if self._on_progress is not None:
+            self._on_progress(
+                {"library": self._library, "phase": phase, "done": done, "total": total}
+            )
 
     def _dest_path(self, source: Path, input_path: Path, output_path: Path) -> Path:
         """Compute the destination symlink path mirroring the input structure."""
@@ -159,6 +171,7 @@ class LibraryProcessor:
                 state.put(cached)
                 infos[path] = cached
                 result.probed += 1
+                self._progress("probing", idx, total)
                 _LOGGER.info(
                     "[%d/%d] Probed '%s': %s",
                     idx,
@@ -173,7 +186,9 @@ class LibraryProcessor:
         """Run the full scan pipeline on a single library."""
         result = ScanResult()
         input_path = library.input_path
+        self._library = library.name
         _LOGGER.info("Processing library '%s': %s", library.name, input_path)
+        self._progress("discovering")
 
         files = self._discover_files(input_path)
         if not self._input_is_usable(library, bool(files)):
@@ -219,6 +234,7 @@ class LibraryProcessor:
             return result
 
         # Phase 3 – reconcile every symlink library
+        self._progress("linking")
         for sym_lib in self._pipeline.symlink_libraries:
             self._reconcile_symlink_library(
                 library,
@@ -291,6 +307,7 @@ class LibraryProcessor:
                 try:
                     if symlinks.ensure_link(source, dest, relative=relative):
                         result.created += 1
+                        result.record_change("created", dest, source)
                     else:
                         result.unchanged += 1
                 except OSError as exc:
@@ -319,7 +336,10 @@ class LibraryProcessor:
             if result.created > created_before:
                 result.changed_outputs.add(str(output_path))
             return
-        removed = symlinks.apply_removals(output_path, plan.removals)
+        removed_links = symlinks.apply_removals(output_path, plan.removals)
+        for link in removed_links:
+            result.record_change("removed", link)
+        removed = len(removed_links)
         result.removed += removed
         if removed or result.created > created_before:
             result.changed_outputs.add(str(output_path))

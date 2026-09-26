@@ -151,7 +151,7 @@ def test_collect_and_render(tmp_path: Path) -> None:
     assert gone["outputs"][0]["exists"] is False
     assert data["triggers"] == [
         "schedule (every 600s, on start)",
-        "http server :1234 (webhooks, no auth)",
+        "web UI & webhooks :1234 (auth: forms)",
     ]
 
     plain = render_plain(data)

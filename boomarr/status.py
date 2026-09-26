@@ -23,8 +23,9 @@ def _triggers(config: Config) -> list[str]:
         else:  # pragma: no cover - other trigger types are migrated away
             triggers.append(trigger.type.value)
     if config.server.enabled:
-        auth = "api key" if config.server.api_key else "no auth"
-        triggers.append(f"http server :{config.server.port} (webhooks, {auth})")
+        triggers.append(
+            f"web UI & webhooks :{config.server.port} (auth: {config.auth.method.value})"
+        )
     return triggers
 
 
