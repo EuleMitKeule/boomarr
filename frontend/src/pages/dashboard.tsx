@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
+  ChevronRight,
   CircleAlert,
   Clock,
   FolderInput,
@@ -12,7 +13,7 @@ import {
   RotateCcw,
   Square,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -21,9 +22,10 @@ import { Badge, Dot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Alert, EmptyState, PageLoader, ProgressBar } from "@/components/ui/misc";
+import { useLiveEvent } from "@/hooks/use-events";
 import { api } from "@/lib/api";
-import type { Dashboard, HealthCheck, ScanRecord } from "@/lib/types";
-import { basename, duration, number, plural, relativeTime, sourceLabel } from "@/lib/utils";
+import type { Dashboard, HealthCheck, LogEntry, ScanRecord } from "@/lib/types";
+import { basename, cn, duration, number, plural, relativeTime, sourceLabel } from "@/lib/utils";
 
 function Stat({ icon, label, value, hint }: { icon: ReactNode; label: string; value: ReactNode; hint?: ReactNode }) {
   return (
@@ -43,6 +45,74 @@ const PHASES: Record<string, string> = {
   probing: "Probing audio tracks",
   linking: "Updating symlinks",
 };
+
+const LIVE_LOG_LINES = 8;
+const LIVE_LOG_LEVELS = new Set(["INFO", "WARNING", "ERROR", "CRITICAL"]);
+const LOG_TONE: Record<string, string> = { WARNING: "text-warning", ERROR: "text-danger", CRITICAL: "text-danger font-semibold" };
+
+/** The latest log lines of the running scan, updated live. */
+export function LiveLog({ since }: { since: number | null }) {
+  const [lines, setLines] = useState<LogEntry[]>([]);
+  const box = useRef<HTMLDivElement>(null);
+  const keep = useCallback(
+    (entries: LogEntry[]) => entries.filter((e) => LIVE_LOG_LEVELS.has(e.level) && (since === null || e.time >= since - 1)),
+    [since],
+  );
+
+  useEffect(() => {
+    let active = true;
+    api
+      .get<LogEntry[]>("logs?limit=50&level=INFO")
+      .then((entries) => active && setLines((current) => mergeLines(keep(entries), current)))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [keep]);
+
+  const onEvent = useCallback(
+    (type: string, data: unknown) => {
+      if (type !== "log") return;
+      const entry = data as LogEntry;
+      if (keep([entry]).length) setLines((current) => mergeLines(current, [entry]));
+    },
+    [keep],
+  );
+  useLiveEvent(onEvent);
+
+  useEffect(() => {
+    if (box.current) box.current.scrollTop = box.current.scrollHeight;
+  }, [lines]);
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
+        <span>Log</span>
+        <Link to="/system/logs" className="flex items-center gap-1 hover:text-fg">
+          All logs <ArrowRight className="size-3" />
+        </Link>
+      </div>
+      <div ref={box} className="h-40 overflow-y-auto rounded-lg border border-border bg-surface-2/50 px-3 py-2 font-mono text-[11.5px] leading-5" data-testid="live-log">
+        {lines.length === 0 ? (
+          <p className="text-subtle">Waiting for output…</p>
+        ) : (
+          lines.map((e) => (
+            <div key={e.id} className={cn("truncate", LOG_TONE[e.level] ?? "text-muted")} title={e.message}>
+              <span className="mr-2 text-subtle tabular-nums">{new Date(e.time * 1000).toLocaleTimeString(undefined, { hour12: false })}</span>
+              {e.message}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function mergeLines(a: LogEntry[], b: LogEntry[]): LogEntry[] {
+  const byId = new Map<number, LogEntry>();
+  for (const e of [...a, ...b]) byId.set(e.id, e);
+  return [...byId.values()].sort((x, y) => x.id - y.id).slice(-LIVE_LOG_LINES * 25);
+}
 
 function ScanCard({ data }: { data: Dashboard }) {
   const cancel = useMutation({
@@ -76,6 +146,7 @@ function ScanCard({ data }: { data: Dashboard }) {
             </Button>
           </div>
           <ProgressBar value={fraction} active />
+          <LiveLog since={data.scan_started_at} />
         </CardBody>
       </Card>
     );
@@ -84,22 +155,7 @@ function ScanCard({ data }: { data: Dashboard }) {
   return (
     <Card>
       <CardBody className="flex flex-wrap items-center gap-x-8 gap-y-3">
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-muted">Last scan</div>
-          {last ? (
-            <div className="mt-1 flex flex-wrap items-center gap-2.5">
-              <span className="font-medium">{relativeTime(last.finished_at)}</span>
-              <OutcomeBadge scan={last} />
-              <ChangeCounts scan={last} />
-              <span className="text-xs text-subtle">
-                {duration(last.duration_seconds)} · {sourceLabel(last.source)}
-              </span>
-            </div>
-          ) : (
-            <div className="mt-1 font-medium text-muted">No scan yet</div>
-          )}
-          {last?.error && <p className="mt-1.5 text-xs text-danger">{last.error}</p>}
-        </div>
+        <LastScan scan={last} />
         <div>
           <div className="text-xs text-muted">Next scheduled scan</div>
           <div className="mt-1 flex items-center gap-1.5 font-medium">
@@ -110,6 +166,38 @@ function ScanCard({ data }: { data: Dashboard }) {
         {data.queued > 0 && <Badge tone="accent">{plural(data.queued, "request")} queued</Badge>}
       </CardBody>
     </Card>
+  );
+}
+
+function LastScan({ scan }: { scan: ScanRecord | null }) {
+  const body = (
+    <>
+      <div className="text-xs text-muted">Last scan</div>
+      {scan ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2.5">
+          <span className="font-medium">{relativeTime(scan.finished_at)}</span>
+          <OutcomeBadge scan={scan} />
+          <ChangeCounts scan={scan} />
+          <span className="text-xs text-subtle">
+            {duration(scan.duration_seconds)} · {sourceLabel(scan.source)}
+          </span>
+        </div>
+      ) : (
+        <div className="mt-1 font-medium text-muted">No scan yet</div>
+      )}
+      {scan?.error && <p className="mt-1.5 text-xs text-danger">{scan.error}</p>}
+    </>
+  );
+  if (scan?.id === undefined) return <div className="min-w-0 flex-1">{body}</div>;
+  return (
+    <Link
+      to={`/activity?scan=${scan.id}`}
+      className="group -mx-2 -my-1 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 hover:bg-surface-2"
+      title="Show details"
+    >
+      <div className="min-w-0 flex-1">{body}</div>
+      <ChevronRight className="size-4 shrink-0 text-subtle group-hover:text-fg" />
+    </Link>
   );
 }
 
@@ -158,7 +246,7 @@ function RecentScans() {
                 to={`/activity?scan=${scan.id}`}
                 className="flex items-center gap-3 px-5 py-2.5 text-[13px] hover:bg-surface-2"
               >
-                <OutcomeBadge scan={scan} />
+                <OutcomeBadge scan={scan} compact />
                 <span className="min-w-0 flex-1 truncate text-muted">{sourceLabel(scan.source)}</span>
                 <ChangeCounts scan={scan} />
                 <span className="w-24 text-right text-xs text-subtle">{relativeTime(scan.finished_at)}</span>
@@ -181,8 +269,11 @@ function HealthBanner() {
       tone={errors.length ? "danger" : "warning"}
       title={errors.length ? plural(errors.length, "problem") + " need attention" : plural(problems.length, "warning")}
       action={
-        <Link to="/system/health" className="text-xs font-medium text-fg hover:underline">
-          Details
+        <Link
+          to={problems[0].scan_id ? `/activity?scan=${problems[0].scan_id}` : "/system/health"}
+          className="text-xs font-medium whitespace-nowrap text-fg hover:underline"
+        >
+          {problems[0].scan_id ? "Show scan" : "Details"}
         </Link>
       }
     >

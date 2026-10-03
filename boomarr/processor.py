@@ -161,6 +161,7 @@ class LibraryProcessor:
                 except Exception:
                     _LOGGER.exception("Error probing '%s'", path)
                     info = None
+                self._progress("probing", idx, total)
                 if info is None:
                     result.errors += 1
                     _LOGGER.warning("[%d/%d] Could not probe '%s'", idx, total, path)
@@ -171,7 +172,6 @@ class LibraryProcessor:
                 state.put(cached)
                 infos[path] = cached
                 result.probed += 1
-                self._progress("probing", idx, total)
                 _LOGGER.info(
                     "[%d/%d] Probed '%s': %s",
                     idx,

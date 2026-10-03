@@ -37,9 +37,9 @@ To skip the setup page (Kubernetes, Ansible…) set `BOOMARR_USERNAME` and
 
 | Page | |
 | --- | --- |
-| **Dashboard** | Current scan with live progress, last/next scan, symlink and cache statistics, audio languages found, health warnings. *Scan now*, *Dry run* and *Cancel* are always one click away (top bar). |
+| **Dashboard** | Current scan with live progress and log, last/next scan (click it for details), symlink and cache statistics, audio languages found, health warnings. *Scan now*, *Dry run* and *Cancel* are always one click away (top bar). |
 | **Libraries** | Add and edit libraries: folder picker for the source/output paths, one or more filtered libraries per source with a visual filter builder (audio language with search, resolution, video/audio codec, channels, invert), and a live preview of the resulting output folder. |
-| **Activity** | Every scan (schedule, webhook, manual, dry run) with outcome, duration and counts. Click a scan to see exactly which links were created or removed. |
+| **Activity** | Every scan (schedule, webhook, manual, dry run) with outcome, duration and counts. Click a scan to see exactly which links were created or removed (or would be, for dry runs) and the errors and warnings it logged. |
 | **Settings** | General, scanning (schedule, debounce, removal guard), probers (FFprobe, Sonarr, Radarr) and media servers (Plex, Jellyfin, Emby) with a *Test* button, notifications (Apprise, with test), security, web server and logging. |
 | **System** | Version and paths, health checks, live logs with filter/search/download, configuration backup and restore. |
 

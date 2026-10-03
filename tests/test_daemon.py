@@ -323,3 +323,70 @@ class TestDaemon:
         daemon.run()
         timer.join()
         assert daemon.shutting_down
+
+
+class TestLibraryStatus:
+    def test_cached_until_invalidated(
+        self, daemon: Daemon, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[int] = []
+
+        def fake_collect(config: Any, state: Any) -> dict[str, Any]:
+            calls.append(1)
+            return {"n": len(calls)}
+
+        monkeypatch.setattr(daemon_module, "collect_status", fake_collect)
+
+        async def body() -> list[Any]:
+            first = await daemon.library_status()
+            second = await daemon.library_status()
+            daemon.invalidate_status(refresh=False)
+            third = await daemon.library_status()
+            daemon.invalidate_status()
+            await daemon.refresh_status()
+            fourth = await daemon.library_status()
+            return [first, second, third, fourth]
+
+        results = asyncio.run(body())
+        assert [r["n"] for r in results] == [1, 1, 2, 3]
+
+    def test_stale_status_is_refreshed_in_the_background(
+        self, daemon: Daemon, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[int] = []
+
+        def fake_collect(config: Any, state: Any) -> dict[str, Any]:
+            calls.append(1)
+            return {"n": len(calls)}
+
+        monkeypatch.setattr(daemon_module, "collect_status", fake_collect)
+
+        async def body() -> list[Any]:
+            first = await daemon.library_status()
+            monkeypatch.setattr(daemon_module, "STATUS_MAX_AGE", -1.0)
+            stale = await daemon.library_status()  # served, refresh starts
+            await daemon.refresh_status()
+            monkeypatch.setattr(daemon_module, "STATUS_MAX_AGE", 300.0)
+            fresh = await daemon.library_status()
+            return [first, stale, fresh]
+
+        assert [r["n"] for r in asyncio.run(body())] == [1, 1, 2]
+
+    def test_concurrent_requests_compute_once(
+        self, daemon: Daemon, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[int] = []
+
+        def fake_collect(config: Any, state: Any) -> dict[str, Any]:
+            calls.append(1)
+            time.sleep(0.05)
+            return {"n": len(calls)}
+
+        monkeypatch.setattr(daemon_module, "collect_status", fake_collect)
+
+        async def body() -> list[Any]:
+            return list(
+                await asyncio.gather(*(daemon.library_status() for _ in range(3)))
+            )
+
+        assert [r["n"] for r in asyncio.run(body())] == [1, 1, 1]

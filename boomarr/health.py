@@ -25,6 +25,8 @@ class Check:
     level: Level
     message: str
     wiki: str | None = None
+    scan_id: int | None = None
+    """History entry with the details (for checks about the last scan)."""
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -191,6 +193,43 @@ def _auth_checks(config: Config, has_credentials: bool) -> list[Check]:
     return checks
 
 
+def _scan_checks(last_scan: dict[str, Any] | None) -> list[Check]:
+    if not last_scan:
+        return []
+    result = last_scan.get("result") or {}
+    scan_id = last_scan.get("id")
+    if last_scan.get("error"):
+        return [
+            Check(
+                "scan",
+                Level.ERROR,
+                f"The last scan failed: {last_scan['error']}",
+                scan_id=scan_id,
+            )
+        ]
+    if result.get("blocked"):
+        return [
+            Check(
+                "scan",
+                Level.WARNING,
+                "The removal guard blocked the last scan; review the changes and "
+                "run a forced scan",
+                "removal-guard",
+                scan_id,
+            )
+        ]
+    if errors := result.get("errors"):
+        return [
+            Check(
+                "scan",
+                Level.WARNING,
+                f"The last scan had {errors} error{'s' if errors != 1 else ''}",
+                scan_id=scan_id,
+            )
+        ]
+    return []
+
+
 def run_checks(
     config: Config,
     *,
@@ -214,28 +253,6 @@ def run_checks(
                 "Web server settings changed; restart Boomarr to apply them",
             )
         )
-    result = (last_scan or {}).get("result") or {}
-    if last_scan and last_scan.get("error"):
-        checks.append(
-            Check("scan", Level.ERROR, f"The last scan failed: {last_scan['error']}")
-        )
-    elif result.get("blocked"):
-        checks.append(
-            Check(
-                "scan",
-                Level.WARNING,
-                "The removal guard blocked the last scan; review the changes and "
-                "run a forced scan",
-                "removal-guard",
-            )
-        )
-    elif result.get("errors"):
-        checks.append(
-            Check(
-                "scan",
-                Level.WARNING,
-                f"The last scan had {result['errors']} error(s); see the logs",
-            )
-        )
+    checks.extend(_scan_checks(last_scan))
     order = {Level.ERROR: 0, Level.WARNING: 1, Level.OK: 2}
     return [c.as_dict() for c in sorted(checks, key=lambda c: order[c.level])]

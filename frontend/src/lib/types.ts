@@ -31,6 +31,13 @@ export interface ScanChange {
   target?: string | null;
 }
 
+export interface ScanIssue {
+  time: number;
+  level: string;
+  logger: string;
+  message: string;
+}
+
 export interface ScanRecord {
   id?: number;
   started_at: number;
@@ -42,6 +49,10 @@ export interface ScanRecord {
   source: string;
   cancelled: boolean;
   result?: ScanResult;
+  /** Warnings and errors logged during the scan (only in the detail view). */
+  issues?: ScanIssue[];
+  issues_count?: number;
+  issues_dropped?: number;
 }
 
 export interface Progress {
@@ -91,6 +102,7 @@ export interface HealthCheck {
   level: "ok" | "warning" | "error";
   message: string;
   wiki: string | null;
+  scan_id?: number | null;
 }
 
 export interface SystemStatus {
