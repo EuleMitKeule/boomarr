@@ -40,7 +40,7 @@ export function useEventStream(enabled: boolean): boolean {
       client.setQueryData<Dashboard>(["dashboard"], (old) => (old ? { ...old, ...fn(old) } : old));
 
     const handle = (type: string) => (message: MessageEvent<string>) => {
-      let payload: { data: unknown };
+      let payload: { data: unknown; time?: number };
       try {
         payload = JSON.parse(message.data);
       } catch {
@@ -58,7 +58,7 @@ export function useEventStream(enabled: boolean): boolean {
           patch(() => ({
             scanning: true,
             queued: 0,
-            scan_started_at: Date.now() / 1000,
+            scan_started_at: payload.time ?? Date.now() / 1000,
             current_scan: data as Dashboard["current_scan"],
             progress: null,
           }));

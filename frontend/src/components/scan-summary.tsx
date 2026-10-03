@@ -11,13 +11,24 @@ export function scanOutcome(scan: ScanRecord): { label: string; tone: "success" 
   return { label: "Success", tone: "success", icon: <CircleCheck className="size-3" /> };
 }
 
-export function OutcomeBadge({ scan }: { scan: ScanRecord }) {
+export function OutcomeBadge({ scan, compact }: { scan: ScanRecord; compact?: boolean }) {
   const outcome = scanOutcome(scan);
-  return (
+  const badge = (
     <Badge tone={outcome.tone}>
       {outcome.icon}
       {outcome.label}
     </Badge>
+  );
+  // A dry run that also had errors etc. must still be recognisable as one.
+  if (!scan.dry_run || outcome.label === "Dry run") return badge;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {badge}
+      <Badge tone="info" title="Dry run">
+        <FlaskConical className="size-3" />
+        <span className={compact ? "sr-only" : undefined}>Dry run</span>
+      </Badge>
+    </span>
   );
 }
 

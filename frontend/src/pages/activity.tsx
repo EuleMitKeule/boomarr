@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, History, Link2, Unlink } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleAlert, CircleX, History, Link2, TriangleAlert, Unlink } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { PageHeader } from "@/components/page-header";
@@ -11,8 +11,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Alert, EmptyState, PageLoader, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
-import type { ScanChange, ScanRecord } from "@/lib/types";
-import { dateTime, duration, number, relativeTime, sourceLabel } from "@/lib/utils";
+import type { ScanChange, ScanIssue, ScanRecord } from "@/lib/types";
+import { cn, dateTime, duration, number, relativeTime, sourceLabel } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
 
@@ -58,11 +58,38 @@ function ChangeList({ changes, roots }: { changes: ScanChange[]; roots: string[]
   );
 }
 
+function IssueList({ issues, dropped }: { issues: ScanIssue[]; dropped: number }) {
+  return (
+    <div className="max-h-[40vh] overflow-y-auto rounded-lg border border-border">
+      {issues.map((issue, i) => {
+        const error = issue.level === "ERROR" || issue.level === "CRITICAL";
+        return (
+          <div key={i} className="flex items-start gap-2.5 border-b border-border/60 px-3 py-2 last:border-0">
+            {error ? (
+              <CircleX className="mt-0.5 size-3.5 shrink-0 text-danger" aria-label="error" />
+            ) : (
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-label="warning" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className={cn("font-mono text-xs break-all whitespace-pre-wrap", error && "text-danger")}>{issue.message}</div>
+              <div className="mt-0.5 font-mono text-[11px] text-subtle">
+                {new Date(issue.time * 1000).toLocaleTimeString(undefined, { hour12: false })} · {issue.logger.replace(/^boomarr\.?/, "") || "boomarr"}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {dropped > 0 && <p className="px-3 py-2 text-xs text-muted">… and {number(dropped)} more (see the logs)</p>}
+    </div>
+  );
+}
+
 function ScanDetail({ id, onClose }: { id: number; onClose: () => void }) {
   const query = useQuery({ queryKey: ["scans", id], queryFn: () => api.get<ScanRecord>(`scans/${id}`) });
   const scan = query.data;
   const r = scan?.result;
   const changes = r?.changes ?? [];
+  const issues = scan?.issues ?? [];
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()} title={`Scan #${id}`} description={scan ? dateTime(scan.finished_at) : undefined} side>
       {!scan ? (
@@ -78,6 +105,11 @@ function ScanDetail({ id, onClose }: { id: number; onClose: () => void }) {
               {sourceLabel(scan.source)} · {duration(scan.duration_seconds)}
             </span>
           </div>
+          {scan.dry_run && (
+            <Alert tone="info" title="Dry run">
+              Nothing was changed. The changes below are what a real scan would do.
+            </Alert>
+          )}
           {scan.error && <Alert tone="danger" title="Error">{scan.error}</Alert>}
           {r?.blocked ? (
             <Alert tone="warning" title="Removal guard">
@@ -110,14 +142,27 @@ function ScanDetail({ id, onClose }: { id: number; onClose: () => void }) {
               </div>
             </div>
           )}
+          {issues.length > 0 ? (
+            <div>
+              <h3 className="mb-2 text-[13px] font-medium">
+                Errors &amp; warnings <span className="text-muted">({number(issues.length + (scan.issues_dropped ?? 0))})</span>
+              </h3>
+              <IssueList issues={issues} dropped={scan.issues_dropped ?? 0} />
+            </div>
+          ) : r?.errors && scan.issues === undefined ? (
+            <p className="flex items-center gap-1.5 text-[13px] text-muted">
+              <CircleAlert className="size-3.5 text-warning" />
+              This scan ran on an older version that did not record error details; see the logs.
+            </p>
+          ) : null}
           <div>
             <h3 className="mb-2 text-[13px] font-medium">
-              Changes {changes.length > 0 && <span className="text-muted">({number(changes.length)})</span>}
+              {scan.dry_run ? "Would change" : "Changes"} {changes.length > 0 && <span className="text-muted">({number(changes.length)})</span>}
             </h3>
             {changes.length ? (
               <ChangeList changes={changes} roots={Object.keys(r?.links ?? {})} />
             ) : (
-              <p className="text-[13px] text-muted">No links were created or removed.</p>
+              <p className="text-[13px] text-muted">{scan.dry_run ? "No links would be created or removed." : "No links were created or removed."}</p>
             )}
           </div>
         </div>

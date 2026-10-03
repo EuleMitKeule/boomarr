@@ -42,7 +42,7 @@ from boomarr.probers.base import MediaProber
 from boomarr.probers.ffprobe import FFProbeProber, _int_or_none
 from boomarr.processor import LibraryProcessor
 from boomarr.runner import ScanReport, ScanRunner
-from boomarr.state import InMemoryStateStore, SQLiteStateStore, _without_changes
+from boomarr.state import InMemoryStateStore, SQLiteStateStore, summarize_scan
 from boomarr.status import _scan_lines, _triggers
 from boomarr.symlinks import SymlinkManager, _log_walk_error
 from boomarr.triggers.schedule import ScheduleTrigger
@@ -398,8 +398,8 @@ class TestRunnerEdges:
 
 
 class TestStateEdges:
-    def test_without_changes_passthrough(self) -> None:
-        assert _without_changes({"result": None}) == {"result": None}
+    def test_summarize_scan_passthrough(self) -> None:
+        assert summarize_scan({"result": None}) == {"result": None}
 
     def test_in_memory_history(self) -> None:
         store = InMemoryStateStore()

@@ -25,13 +25,16 @@ SCAN_HISTORY_LIMIT = 500
 """Number of scans kept in the history."""
 
 
-def _without_changes(record: dict[str, Any]) -> dict[str, Any]:
+def summarize_scan(record: dict[str, Any]) -> dict[str, Any]:
+    """Drop the (potentially large) change and issue lists from a scan record."""
+    slim = {k: v for k, v in record.items() if k != "issues"}
+    if "issues" in record:
+        slim["issues_count"] = len(record["issues"] or ())
     result = record.get("result")
-    if not isinstance(result, dict) or "changes" not in result:
-        return record
-    slim = {k: v for k, v in result.items() if k != "changes"}
-    slim["changes_count"] = len(result["changes"])
-    return {**record, "result": slim}
+    if isinstance(result, dict) and "changes" in result:
+        slim["result"] = {k: v for k, v in result.items() if k != "changes"}
+        slim["result"]["changes_count"] = len(result["changes"])
+    return slim
 
 
 def _encode_tracks(info: MediaInfo) -> str:
@@ -181,7 +184,7 @@ class InMemoryStateStore(StateStore):
     ) -> tuple[list[dict[str, Any]], int]:
         with self._lock:
             newest = list(reversed(self._scans))
-            page = [_without_changes(r) for r in newest[offset : offset + limit]]
+            page = [summarize_scan(r) for r in newest[offset : offset + limit]]
             return page, len(newest)
 
     def get_scan(self, scan_id: int) -> dict[str, Any] | None:
@@ -245,6 +248,28 @@ CREATE TABLE IF NOT EXISTS scan_history (
     finished_at REAL    NOT NULL,
     record      TEXT    NOT NULL
 );
+"""
+
+# Rows whose ``tracks`` column holds an unreadable track list are skipped.
+_STATS_SQL = """
+SELECT COUNT(*),
+       COALESCE(SUM(COALESCE(json_array_length(tracks, '$.a'), 0) = 0), 0),
+       MAX(probed_at)
+FROM file_cache
+WHERE CASE WHEN json_valid(tracks) THEN json_type(tracks) = 'object'
+      AND COALESCE(json_type(tracks, '$.a'), 'array') = 'array' END
+"""
+
+_LANGUAGES_SQL = """
+SELECT lang, COUNT(*) AS n FROM (
+    SELECT DISTINCT f.path, lower(json_extract(a.value, '$[1]')) AS lang
+    FROM file_cache AS f, json_each(f.tracks, '$.a') AS a
+    WHERE CASE WHEN json_valid(f.tracks) THEN json_type(f.tracks) = 'object'
+          AND COALESCE(json_type(f.tracks, '$.a'), 'array') = 'array' END
+)
+WHERE lang IS NOT NULL
+GROUP BY lang
+ORDER BY n DESC, lang
 """
 
 _UPSERT_SQL = """
@@ -482,7 +507,7 @@ class SQLiteStateStore(StateStore):
                 (limit, offset),
             ).fetchall()
         records = [self._decode_scan(scan_id, raw) for scan_id, raw in rows]
-        return [_without_changes(r) for r in records if r is not None], total
+        return [summarize_scan(r) for r in records if r is not None], total
 
     def get_scan(self, scan_id: int) -> dict[str, Any] | None:
         with self._lock:
@@ -498,18 +523,17 @@ class SQLiteStateStore(StateStore):
             self._conn.commit()
 
     def get_stats(self) -> dict[str, Any]:
+        # Aggregated in SQL: decoding every entry in Python takes seconds on
+        # large libraries and blocks scans that need the lock meanwhile.
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT path, size, mtime, tracks, probed_at FROM file_cache"
-            ).fetchall()
+            total, without_audio, last = self._conn.execute(_STATS_SQL).fetchone()
+            languages = self._conn.execute(_LANGUAGES_SQL).fetchall()
             hits, misses = self._hits, self._misses
-        infos: list[MediaInfo] = []
-        last: float | None = None
-        for path, size, mtime, tracks, probed_at in rows:
-            try:
-                audio, video = _decode_tracks(tracks)
-            except ValueError, TypeError, IndexError:
-                continue
-            infos.append(MediaInfo(Path(path), audio, size, mtime, video))
-            last = probed_at if last is None else max(last, probed_at)
-        return _build_stats(infos, last, hits, misses)
+        lookups = hits + misses
+        return {
+            "total_cached": int(total),
+            "without_audio": int(without_audio),
+            "languages": {lang: int(n) for lang, n in languages},
+            "last_probe_time": last,
+            "hit_rate": hits / lookups if lookups else 0.0,
+        }

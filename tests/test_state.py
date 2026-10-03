@@ -221,6 +221,38 @@ class TestSQLiteStateStore:
         assert store.get_stats()["total_cached"] == 0
         store.close()
 
+    @pytest.mark.parametrize("tracks", ["[1]", '{"a": 1}'])
+    def test_malformed_track_lists_are_ignored(
+        self, tmp_path: Path, tracks: str
+    ) -> None:
+        store = SQLiteStateStore(tmp_path / "state.db")
+        store.put(_info(FILE_A, languages=("deu",)))
+        store.put(_info(FILE_B, languages=("eng",)))
+        store._conn.execute(
+            "UPDATE file_cache SET tracks = ? WHERE path = ?", (tracks, str(FILE_B))
+        )
+        store._conn.commit()
+        stats = store.get_stats()
+        assert stats["total_cached"] == 1
+        assert stats["languages"] == {"deu": 1}
+        assert store.get(FILE_B, 100, 1.0) is None
+        store.close()
+
+    def test_entry_without_audio_list(self, tmp_path: Path) -> None:
+        store = SQLiteStateStore(tmp_path / "state.db")
+        store.put(_info(FILE_A, languages=("deu",)))
+        store._conn.execute("UPDATE file_cache SET tracks = '{\"v\": []}'")
+        store._conn.commit()
+        stats = store.get_stats()
+        assert (stats["total_cached"], stats["without_audio"]) == (1, 1)
+        store.close()
+
+    def test_stats_count_each_file_once_per_language(self, tmp_path: Path) -> None:
+        store = SQLiteStateStore(tmp_path / "state.db")
+        store.put(_info(FILE_A, languages=("deu", "DEU", "eng")))
+        assert store.get_stats()["languages"] == {"deu": 1, "eng": 1}
+        store.close()
+
     def test_reset_clears_entries(self, tmp_path: Path) -> None:
         store = SQLiteStateStore(tmp_path / "state.db")
         store.put(_info())

@@ -29,6 +29,7 @@ from boomarr.models import ScanEvent, ScanResult
 from boomarr.pipeline import PipelineFactory
 from boomarr.runner import ScanRunner
 from boomarr.state import StateStore
+from boomarr.status import collect_status
 from boomarr.triggers.base import TriggerSource
 from boomarr.triggers.schedule import ScheduleTrigger
 
@@ -38,6 +39,12 @@ if TYPE_CHECKING:  # pragma: no cover
 _LOGGER = logging.getLogger(__name__)
 
 _RESTART_FIELDS = ("enabled", "host", "port", "url_base", "trusted_proxies")
+STATUS_MAX_AGE = 300.0
+"""Seconds after which cached library statistics are refreshed in the background.
+
+Scans and configuration changes invalidate them right away; the age limit
+only catches changes made outside Boomarr.
+"""
 
 
 def merge_events(events: list[ScanEvent]) -> ScanEvent:
@@ -90,6 +97,10 @@ class Daemon:
         self._shutdown = asyncio.Event()
         self._cancel_scan = threading.Event()
         self._server: uvicorn.Server | None = None
+        self._status: tuple[int, float, dict[str, Any]] | None = None
+        self._status_generation = 0
+        self._status_lock = asyncio.Lock()
+        self._status_task: asyncio.Task[dict[str, Any]] | None = None
         self._install_log_buffer()
 
     # -- construction helpers ---------------------------------------------
@@ -174,6 +185,7 @@ class Daemon:
             for name in _RESTART_FIELDS
         )
         self.restart_required = restart
+        self.invalidate_status()
         self.events.publish("config.updated", {"restart_required": restart})
         _LOGGER.info(
             "Configuration applied%s",
@@ -181,9 +193,48 @@ class Daemon:
         )
         return restart
 
+    async def library_status(self) -> dict[str, Any]:
+        """Library, symlink and probe cache statistics for the dashboard.
+
+        Counting symlinks walks every output directory, which is slow on
+        large libraries and network shares, so the result is cached until the
+        next scan or configuration change.
+        """
+        cached = self._status
+        if cached is None or cached[0] != self._status_generation:
+            return await self._compute_status()
+        if time.monotonic() - cached[1] > STATUS_MAX_AGE:
+            self.refresh_status()
+        return cached[2]
+
+    def invalidate_status(self, *, refresh: bool = True) -> None:
+        """Forget the cached library statistics (and compute them again)."""
+        self._status_generation += 1
+        if refresh:
+            self.refresh_status()
+
+    def refresh_status(self) -> asyncio.Task[dict[str, Any]]:
+        """Compute the library statistics in the background."""
+        if self._status_task is None or self._status_task.done():
+            self._status_task = asyncio.create_task(self._compute_status())
+        return self._status_task
+
+    async def _compute_status(self) -> dict[str, Any]:
+        async with self._status_lock:
+            generation = self._status_generation
+            cached = self._status
+            if (
+                cached is not None
+                and cached[0] == generation
+                and time.monotonic() - cached[1] <= STATUS_MAX_AGE
+            ):  # computed while we were waiting for the lock
+                return cached[2]
+            data = await asyncio.to_thread(collect_status, self.config, self.state)
+            self._status = (generation, time.monotonic(), data)
+            return data
+
     def snapshot(self) -> dict[str, Any]:
         """Runtime state for the dashboard."""
-        last = self.runner.last_report
         return {
             "version": VERSION,
             "started_at": self.started_at,
@@ -202,7 +253,7 @@ class Daemon:
             "queued": self.queue_size,
             "next_scheduled_scan": self.next_scheduled_scan(),
             "restart_required": self.restart_required,
-            "last_scan": last.as_dict() if last else None,
+            "last_scan": self.runner.last_summary(),
         }
 
     def request_shutdown(self) -> None:
@@ -228,6 +279,7 @@ class Daemon:
                 loop.add_signal_handler(sig, self.request_shutdown)
         tasks: list[asyncio.Task[Any]] = [asyncio.create_task(self._heartbeat())]
         try:
+            tasks.append(self.refresh_status())
             if self._server_config.enabled:
                 tasks.append(asyncio.create_task(self._serve()))
             self.triggers = self.build_triggers(self.config)
@@ -389,8 +441,8 @@ class Daemon:
             self.scan_started_at = None
             self.current_scan = None
             self.progress = None
-            report = runner.last_report
-            self.events.publish("scan.finished", report.as_dict() if report else None)
+            self.invalidate_status()
+            self.events.publish("scan.finished", runner.last_summary())
         if result is not None:
             _LOGGER.info(
                 "Scan complete: %d created, %d removed, %d unchanged, %d probed, "

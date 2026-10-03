@@ -29,7 +29,6 @@ from boomarr.config_store import ConfigConflictError, ConfigReadOnlyError
 from boomarr.const import VERSION
 from boomarr.health import run_checks
 from boomarr.languages import known_languages
-from boomarr.status import collect_status
 from boomarr.web import connections
 from boomarr.web.security import Principal, require_user
 
@@ -111,9 +110,7 @@ async def health_checks(request: Request) -> list[dict[str, Any]]:
 @router.get("/dashboard")
 async def dashboard(request: Request) -> dict[str, Any]:
     daemon = _daemon(request)
-    library_status = await asyncio.to_thread(
-        collect_status, daemon.config, daemon.state
-    )
+    library_status = await daemon.library_status()
     snapshot = daemon.snapshot()
     # The in-memory report is the freshest; after a restart fall back to the
     # stored one, which may come from an older version without all fields.

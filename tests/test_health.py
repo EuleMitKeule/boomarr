@@ -136,7 +136,8 @@ class TestRunChecks:
         [
             ({"error": "boom"}, "error", "failed: boom"),
             ({"result": {"blocked": 1}}, "warning", "removal guard"),
-            ({"result": {"errors": 2}}, "warning", "2 error(s)"),
+            ({"result": {"errors": 2}}, "warning", "had 2 errors"),
+            ({"result": {"errors": 1}}, "warning", "had 1 error"),
             ({"result": {"errors": 0}}, None, None),
         ],
     )
@@ -157,6 +158,12 @@ class TestRunChecks:
         else:
             assert checks[0]["level"] == level
             assert text in checks[0]["message"]
+
+    def test_last_scan_links_to_history(self, config_dir: Path) -> None:
+        checks = _checks(
+            _config(config_dir), last_scan={"id": 7, "result": {"errors": 1}}
+        )
+        assert next(c for c in checks if c["id"] == "scan")["scan_id"] == 7
 
     def test_restart_and_sorting(self, config_dir: Path) -> None:
         checks = _checks(

@@ -9,6 +9,7 @@ import { FilterCard } from "@/components/filter-editor";
 import { TagInput } from "@/components/form";
 import { OutcomeBadge, scanOutcome } from "@/components/scan-summary";
 import type { ScanRecord } from "@/lib/types";
+import { LiveLog } from "@/pages/dashboard";
 
 function wrap(children: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -40,6 +41,29 @@ describe("scan outcome", () => {
     expect(scanOutcome(base).label).toBe("Success");
     render(<OutcomeBadge scan={{ ...base, error: "x" }} />);
     expect(screen.getByText("Failed")).toBeInTheDocument();
+  });
+
+  it("keeps dry runs recognisable when they had errors", () => {
+    const result = { created: 1, removed: 0, unchanged: 0, probed: 0, skipped: 0, filtered: 0, errors: 1, blocked: 0, links: {}, changed_outputs: [] };
+    render(<OutcomeBadge scan={{ ...base, dry_run: true, result }} />);
+    expect(screen.getByText("Errors")).toBeInTheDocument();
+    expect(screen.getByText("Dry run")).toBeInTheDocument();
+  });
+});
+
+describe("LiveLog", () => {
+  it("shows log lines of the running scan as they arrive", async () => {
+    const entries = [
+      { id: 1, time: 5, level: "INFO", logger: "boomarr", message: "before the scan" },
+      { id: 2, time: 20, level: "INFO", logger: "boomarr.processor", message: "Processing library 'Movies'" },
+      { id: 3, time: 21, level: "DEBUG", logger: "boomarr", message: "noise" },
+    ];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(entries), { headers: { "Content-Type": "application/json" } }));
+    render(wrap(<LiveLog since={20} />));
+    expect(await screen.findByText("Processing library 'Movies'")).toBeInTheDocument();
+    expect(screen.queryByText("before the scan")).not.toBeInTheDocument();
+    expect(screen.queryByText("noise")).not.toBeInTheDocument();
+    vi.restoreAllMocks();
   });
 });
 

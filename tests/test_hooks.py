@@ -1,6 +1,7 @@
 """Tests for metrics, the scan runner, notifications and media server hooks."""
 
 import json
+import logging
 import threading
 import time
 from collections.abc import Iterator
@@ -12,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import SecretStr
 
+from boomarr import runner as runner_module
 from boomarr.config import (
     Config,
     EmbyConfig,
@@ -33,7 +35,8 @@ from boomarr.hooks import (
 from boomarr.metrics import Metrics
 from boomarr.models import ScanResult
 from boomarr.pipeline import PipelineFactory
-from boomarr.runner import ScanReport, ScanRunner
+from boomarr.runner import IssueCollector, ScanReport, ScanRunner
+from boomarr.state import InMemoryStateStore
 
 
 def _report(**kwargs: Any) -> ScanReport:
@@ -265,3 +268,67 @@ class TestScanRunner:
         cancel.set()
         ScanRunner(self._config(), PipelineFactory(), hooks=[hook]).run(cancel)
         hook.after_scan.assert_not_called()
+
+
+class TestIssueCollector:
+    def _record(self, level: int, *, thread: int, name: str) -> logging.LogRecord:
+        record = logging.LogRecord(
+            "boomarr.x", level, __file__, 1, "msg %s", ("a",), None
+        )
+        record.thread = thread
+        record.threadName = name
+        return record
+
+    def test_keeps_scan_and_probe_threads_only(self) -> None:
+        collector = IssueCollector(thread_id=1)
+        collector.handle(self._record(logging.WARNING, thread=1, name="worker"))
+        collector.handle(self._record(logging.ERROR, thread=2, name="probe_0"))
+        collector.handle(self._record(logging.ERROR, thread=3, name="web"))
+        assert [i["level"] for i in collector.issues] == ["WARNING", "ERROR"]
+        assert collector.issues[0]["message"] == "msg a"
+
+    def test_caps_the_number_of_issues(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(runner_module, "MAX_RECORDED_ISSUES", 2)
+        collector = IssueCollector(thread_id=1)
+        for _ in range(5):
+            collector.handle(self._record(logging.ERROR, thread=1, name="x"))
+        assert len(collector.issues) == 2
+        assert collector.dropped == 3
+
+
+class TestScanIssues:
+    def test_warnings_of_a_scan_are_recorded(self, tmp_path: Path) -> None:
+        config = Config(
+            config_dir=tmp_path,
+            config_file="t.yml",
+            general=GeneralConfig(),
+            logging=LoggingConfig(),
+            libraries=[
+                {
+                    "name": "Movies",
+                    "input_path": str(tmp_path / "missing"),
+                    "output_path": str(tmp_path / "out"),
+                    "symlink_libraries": [
+                        {
+                            "name": "deu",
+                            "filters": [
+                                {"type": "audio_language", "languages": ["deu"]}
+                            ],
+                        }
+                    ],
+                }
+            ],
+        )
+        state = InMemoryStateStore()
+        runner = ScanRunner(config, PipelineFactory(state=state))
+        logging.getLogger("boomarr.other").warning("unrelated %s", "x")
+        runner.run(threading.Event())
+        record = state.get_scan(1)
+        assert record is not None
+        assert any("missing" in i["message"] for i in record["issues"])
+        summary = runner.last_summary()
+        assert summary is not None
+        assert summary["id"] == 1
+        assert summary["issues_count"] == len(record["issues"])
+        assert "issues" not in summary
+        assert state.get_meta("last_scan")["id"] == 1  # ty: ignore[not-subscriptable]
