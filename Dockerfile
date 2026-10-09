@@ -7,7 +7,7 @@ ARG PYTHON_VERSION=3.14
 # shared libraries into the image.
 FROM mwader/static-ffmpeg:9.0 AS ffmpeg
 
-FROM ghcr.io/astral-sh/uv:0.12 AS uv
+FROM ghcr.io/astral-sh/uv:0.13 AS uv
 
 # ---------------------------------------------------------------------------
 # Web UI: static files only, the runtime image contains no Node.js
