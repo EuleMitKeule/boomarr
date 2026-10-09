@@ -234,7 +234,7 @@ jobs:
           sed -i 's|/home/runner/work/boomarr/boomarr|/github/workspace|g' coverage.xml
 
       - name: Run SonarCloud analysis
-        uses: SonarSource/sonarqube-scan-action@v8.2.2
+        uses: SonarSource/sonarqube-scan-action@v8.3.0
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
